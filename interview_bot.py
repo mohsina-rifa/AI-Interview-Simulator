@@ -115,7 +115,13 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     
 
 #node-2: Answer evaluator
-#
+def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
+    """Evaluates answers based on the questionset"""
+    
+    questions = state["questions"][3:]
+    user_score = 0
+    
+    return state
 
 #node-3: Feedback provider
 #
