@@ -1,5 +1,9 @@
 from typing import Dict, List, TypedDict
 from langgraph.graph import StateGraph, END
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class InterviewState(TypedDict):

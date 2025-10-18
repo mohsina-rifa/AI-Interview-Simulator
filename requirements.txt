@@ -3,6 +3,8 @@ langgraph>=0.0.40
 langchain>=0.1.0
 typing-extensions>=4.5.0
 pydantic>=2.0.0
+python-dotenv>=1.0.0
+langchain-groq>=0.0.1
 
 # Optional: For enhanced functionality
 # langchain-openai>=0.0.5  # Uncomment if using OpenAI models
