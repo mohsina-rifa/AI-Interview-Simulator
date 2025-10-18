@@ -121,6 +121,52 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
     questions = state["questions"][3:]
     user_score = 0
     
+    llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
+    
+    for question in questions:
+        print(f"\n{question}")
+        user_answer = input("Your answer: ")
+        
+        # Evaluate answer using LLM
+        eval_prompt = f"""Is this answer correct and relevant for the question?
+        Question: {question}
+        Answer: {user_answer}
+        Reply with only "CORRECT" or "INCORRECT"."""
+        
+        eval_response = llm.invoke(eval_prompt)
+        is_correct = "CORRECT" in eval_response.content.upper()
+        
+        weight = state["question_weights"].get(question, {}).get("weight", 0)
+        
+        if is_correct:
+            print("✓ Correct! Well done.")
+            user_score += weight
+        else:
+            print("✗ Incorrect.")
+            user_score -= 1
+            
+            # Ask to try again
+            print("Please try again:")
+            retry_answer = input("Your answer: ")
+            
+            retry_prompt = f"""Is this answer correct and relevant for the question?
+            Question: {question}
+            Answer: {retry_answer}
+            Reply with only "CORRECT" or "INCORRECT"."""
+            
+            retry_response = llm.invoke(retry_prompt)
+            is_retry_correct = "CORRECT" in retry_response.content.upper()
+            
+            if is_retry_correct:
+                print("✓ Correct! Good effort.")
+                user_score += (weight / 2)
+            else:
+                print("✗ Moving to next question.")
+                user_score -= 2
+        
+        state["answers"].append(user_answer)
+    
+    state["user_score"] = user_score
     return state
 
 #node-3: Feedback provider
