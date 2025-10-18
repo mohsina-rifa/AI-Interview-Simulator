@@ -3,7 +3,10 @@ from langgraph.graph import StateGraph, END
 import os
 from dotenv import load_dotenv
 
+
+
 load_dotenv()
+
 
 
 class InterviewState(TypedDict):
@@ -15,9 +18,10 @@ class InterviewState(TypedDict):
     question_weights: Dict[str, dict]
 
 
-# Nodes
 
+# Nodes
 from langchain_groq import ChatGroq
+
 
 #node-1: Question generator
 def node_1_generate_questions(state: InterviewState) -> InterviewState:
@@ -141,9 +145,11 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         if is_correct:
             print("✓ Correct! Well done.")
             user_score += weight
+            state["question_weights"][question]["score"] = weight
         else:
             print("✗ Incorrect.")
             user_score -= 1
+            state["question_weights"][question]["score"] = -1
             
             # Ask to try again
             print("Please try again:")
@@ -160,17 +166,21 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             if is_retry_correct:
                 print("✓ Correct! Good effort.")
                 user_score += (weight / 2)
+                state["question_weights"][question]["score"] = weight / 2
             else:
                 print("✗ Moving to next question.")
                 user_score -= 2
+                state["question_weights"][question]["score"] = -2
         
         state["answers"].append(user_answer)
     
     state["user_score"] = user_score
     return state
 
+
 #node-3: Feedback provider
 #
+
 
 
 # Graph setup
