@@ -47,7 +47,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     
     requirements_list = [req.strip() for req in state["requirements"].split(",")]
     
-    llm = ChatGroq(model="mixtral-8x7b-32768", api_key=os.getenv("GROQ_API_KEY"))
+    llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
     
     for requirement in requirements_list:
         print(f"\nInterview questionset for {requirement}.")
@@ -130,4 +130,19 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
 
 
 if __name__ == "__main__":
-    pass
+    initial_state = {
+        "role": "",
+        "questions": [],
+        "answers": [],
+        "requirements": "",
+        "greeting_shown": False,
+        "question_weights": {}
+    }
+    
+    result = node_1_generate_questions(initial_state)
+    print("\n\n=== FINAL STATE ===")
+    print(f"Name: {result['answers'][0]}")
+    print(f"Position: {result['answers'][1]}")
+    print(f"Requirements: {result['requirements']}")
+    print(f"Total Questions: {len(result['questions'])}")
+    print(f"Question Weights Keys: {len(result['question_weights'])}")
