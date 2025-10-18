@@ -25,21 +25,26 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
         print("Hello, I am Anishom and I will be taking your interview today.")
         state["greeting_shown"] = True
     
-    questions = [
+    starting_questions = [
         "What is your name?",
         "What position have you applied for?",
         "What were the requirements for that?"
     ]
     
     answers = []
-    for question in questions:
+    for question in starting_questions:
         print(f"\n{question}")
         answer = input("Your answer: ")
         answers.append(answer)
     
-    state["questions"] = questions
+    state["questions"] = starting_questions
     state["answers"] = answers
     state["requirements"] = answers[2]
+    
+    requirements_list = [req.strip() for req in state["requirements"].split(",")]
+    
+    for requirement in requirements_list:
+        print(f"\nInterview questionset for {requirement}.")
     
     return state
 
