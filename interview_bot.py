@@ -130,19 +130,4 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
 
 
 if __name__ == "__main__":
-    initial_state = {
-        "role": "",
-        "questions": [],
-        "answers": [],
-        "requirements": "",
-        "greeting_shown": False,
-        "question_weights": {}
-    }
-    
-    result = node_1_generate_questions(initial_state)
-    print("\n\n=== FINAL STATE ===")
-    print(f"Name: {result['answers'][0]}")
-    print(f"Position: {result['answers'][1]}")
-    print(f"Requirements: {result['requirements']}")
-    print(f"Total Questions: {len(result['questions'])}")
-    print(f"Question Weights Keys: {len(result['question_weights'])}")
+    pass
