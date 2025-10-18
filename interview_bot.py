@@ -9,6 +9,8 @@ load_dotenv()
 class InterviewState(TypedDict):
     role: str
     questions: List[str]
+    answers: List[str]
+    requirements: str
     greeting_shown: bool
 
 
@@ -22,6 +24,22 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     if not state.get("greeting_shown", False):
         print("Hello, I am Anishom and I will be taking your interview today.")
         state["greeting_shown"] = True
+    
+    questions = [
+        "What is your name?",
+        "What position have you applied for?",
+        "What were the requirements for that?"
+    ]
+    
+    answers = []
+    for question in questions:
+        print(f"\n{question}")
+        answer = input("Your answer: ")
+        answers.append(answer)
+    
+    state["questions"] = questions
+    state["answers"] = answers
+    state["requirements"] = answers[2]
     
     return state
 
