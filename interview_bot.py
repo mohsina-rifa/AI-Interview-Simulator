@@ -12,10 +12,20 @@ class InterviewState(TypedDict):
 
 
 # Nodes
+
+#node-1: Question generator
 #
+
+#node-2: Answer evaluator
+#
+
+#node-3: Feedback provider
+#
+
 
 # Graph setup
 #
+
 
 # Test function
 #
