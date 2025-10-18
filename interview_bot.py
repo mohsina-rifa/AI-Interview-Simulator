@@ -131,7 +131,24 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         print(f"\n{question}")
         user_answer = input("Your answer: ")
         
-        # Evaluate answer using LLM
+        q_type = state["question_weights"].get(question, {}).get("type", "unknown")
+        weight = state["question_weights"].get(question, {}).get("weight", 0)
+        
+        # Check for "don't know" response
+        if "don't" in user_answer.lower() and "know" in user_answer.lower():
+            print("✗ Moving to next question.")
+            user_score -= 2
+            state["question_weights"][question]["score"] = -2
+            state["answers"].append(user_answer)
+            continue
+        
+        # For basic and personal questions, just record with 0
+        if q_type in ["basic", "personal"]:
+            state["question_weights"][question]["score"] = 0
+            state["answers"].append(user_answer)
+            continue
+        
+        # Evaluate answer using LLM for other question types
         eval_prompt = f"""Is this answer correct and relevant for the question?
         Question: {question}
         Answer: {user_answer}
@@ -139,8 +156,6 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         
         eval_response = llm.invoke(eval_prompt)
         is_correct = "CORRECT" in eval_response.content.upper()
-        
-        weight = state["question_weights"].get(question, {}).get("weight", 0)
         
         if is_correct:
             print("✓ Correct! Well done.")
