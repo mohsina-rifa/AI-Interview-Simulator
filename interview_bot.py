@@ -87,14 +87,42 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
         followup_questions = [q.replace("FOLLOWUP: ", "").strip() for q in questions_text.split("\n") if q.startswith("FOLLOWUP:")]
         independent_questions = [q.replace("INDEPENDENT: ", "").strip() for q in questions_text.split("\n") if q.startswith("INDEPENDENT:")]
         
+        # Assign dynamic weights based on LLM evaluation
         for q in scenario_questions:
-            state["question_weights"][q] = {"type": "scenario", "weight": 0}
+            weight_prompt = f"""Based on how many times this question appeared on the internet for {requirement}, what should be the weight for this question within 1 to 10?
+            Question: {q}
+            Reply with only a number between 1 and 10."""
+            weight_response = llm.invoke(weight_prompt)
+            try:
+                weight = float(weight_response.content.strip())
+                weight = max(1, min(10, weight))
+            except:
+                weight = 5
+            state["question_weights"][q] = {"type": "scenario", "weight": weight}
         
         for q in followup_questions:
-            state["question_weights"][q] = {"type": "followup", "weight": 0}
+            weight_prompt = f"""Based on how many times this question appeared on the internet for {requirement}, what should be the weight for this question within 1 to 10?
+            Question: {q}
+            Reply with only a number between 1 and 10."""
+            weight_response = llm.invoke(weight_prompt)
+            try:
+                weight = float(weight_response.content.strip())
+                weight = max(1, min(10, weight))
+            except:
+                weight = 5
+            state["question_weights"][q] = {"type": "followup", "weight": weight}
         
         for q in independent_questions:
-            state["question_weights"][q] = {"type": "independent", "weight": 0}
+            weight_prompt = f"""Based on how many times this question appeared on the internet for {requirement}, what should be the weight for this question within 1 to 10?
+            Question: {q}
+            Reply with only a number between 1 and 10."""
+            weight_response = llm.invoke(weight_prompt)
+            try:
+                weight = float(weight_response.content.strip())
+                weight = max(1, min(10, weight))
+            except:
+                weight = 5
+            state["question_weights"][q] = {"type": "independent", "weight": weight}
         
         # Personal Questions (2) - weight: 0
         personal_questions = [
@@ -207,4 +235,17 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 
 
 if __name__ == "__main__":
-    pass
+    initial_state = {
+        "role": "",
+        "questions": [],
+        "answers": [],
+        "requirements": "",
+        "greeting_shown": False,
+        "question_weights": {}
+    }
+    
+    result = node_1_generate_questions(initial_state)
+    result = node_2_evaluate_answers(result)
+    
+    print("\n\n=== FINAL INTERVIEW RESULTS ===")
+    print(f"Total Score: {result.get('user_score', 0)}")
