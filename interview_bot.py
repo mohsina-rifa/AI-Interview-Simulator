@@ -280,13 +280,19 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             continue
 
         # Evaluate answer using LLM for position-related questions only
-        eval_prompt = f"""Compare the user's answer with the expected answer for this {state['requirements']} question:
-        
+        eval_prompt = f"""You are strictly evaluating a {state['requirements']} technical interview answer. Be very strict in your evaluation.
+
         Question: {question}
         Expected Answer: {expected_answer}
         User Answer: {user_answer}
 
-        Does the user's answer match the idea of the expected answer?
+        Does the user's answer demonstrate correct understanding of {state['requirements']} concepts and match the expected answer's technical accuracy?
+
+        IMPORTANT: 
+        - If the user answer contradicts best practices, mark as INCORRECT
+        - If the user answer is technically wrong, mark as INCORRECT
+        - Only mark CORRECT if the answer shows proper understanding
+
         Reply with only "CORRECT" or "INCORRECT"."""
 
         eval_response = safe_llm_invoke(llm, eval_prompt)
