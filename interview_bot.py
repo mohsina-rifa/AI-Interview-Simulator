@@ -155,6 +155,32 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
     
     llm = ChatGroq(model="llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY"))
     
+    # Map scores of all questions with 0 initially
+    for question in questions:
+        if "score" not in state["question_weights"].get(question, {}):
+            state["question_weights"][question]["score"] = 0
+    
+    # Generate answers for position-related questions
+    print("\nGenerating expected answers for position-related questions...")
+    for question in questions:
+        q_type = state["question_weights"].get(question, {}).get("type", "unknown")
+        
+        # Only generate answers for position-related questions (not basic/personal)
+        if q_type in ["scenario", "followup", "independent"]:
+            answer_prompt = f"""Generate a comprehensive correct answer for this {state['requirements']} interview question:
+            Question: {question}
+            
+            Provide a detailed answer that demonstrates expertise in {state['requirements']}."""
+            
+            answer_response = llm.invoke(answer_prompt)
+            expected_answer = answer_response.content.strip()
+            
+            # Store expected answer in question weights
+            state["question_weights"][question]["expected_answer"] = expected_answer
+    
+    print("Expected answers generated. Starting interview evaluation...\n")
+    
+    # Ask questions one by one and evaluate only position-related questions
     for question in questions:
         print(f"\n{question}")
         user_answer = input("Your answer: ")
@@ -162,7 +188,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         q_type = state["question_weights"].get(question, {}).get("type", "unknown")
         weight = state["question_weights"].get(question, {}).get("weight", 0)
         
-        # Check for "don't know" response
+        # Check for "don't know" response (pass)
         if "don't" in user_answer.lower() and "know" in user_answer.lower():
             print("✗ Moving to next question.")
             user_score -= 2
@@ -176,10 +202,15 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             state["answers"].append(user_answer)
             continue
         
-        # Evaluate answer using LLM for other question types
-        eval_prompt = f"""Is this answer correct and relevant for the question?
+        # Evaluate answer using LLM for position-related questions only
+        expected_answer = state["question_weights"][question].get("expected_answer", "")
+        eval_prompt = f"""Compare the user's answer with the expected answer for this {state['requirements']} question:
+        
         Question: {question}
-        Answer: {user_answer}
+        Expected Answer: {expected_answer}
+        User Answer: {user_answer}
+        
+        Is the user's answer correct and demonstrates good understanding?
         Reply with only "CORRECT" or "INCORRECT"."""
         
         eval_response = llm.invoke(eval_prompt)
@@ -194,32 +225,44 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             user_score -= 1
             state["question_weights"][question]["score"] = -1
             
-            # Ask to try again
-            print("Please try again:")
+            # Second chance
+            print("Please try again (or say 'don't know' to pass):")
             retry_answer = input("Your answer: ")
             
-            retry_prompt = f"""Is this answer correct and relevant for the question?
-            Question: {question}
-            Answer: {retry_answer}
-            Reply with only "CORRECT" or "INCORRECT"."""
-            
-            retry_response = llm.invoke(retry_prompt)
-            is_retry_correct = "CORRECT" in retry_response.content.upper()
-            
-            if is_retry_correct:
-                print("✓ Correct! Good effort.")
-                user_score += (weight / 2)
-                state["question_weights"][question]["score"] = weight / 2
+            # Check if user passes on second chance
+            if "don't" in retry_answer.lower() and "know" in retry_answer.lower():
+                print("✗ Passed on second chance.")
+                user_score -= 3
+                state["question_weights"][question]["score"] = -3
             else:
-                print("✗ Moving to next question.")
-                user_score -= 2
-                state["question_weights"][question]["score"] = -2
+                # Evaluate second attempt
+                retry_prompt = f"""Compare the user's retry answer with the expected answer:
+                
+                Question: {question}
+                Expected Answer: {expected_answer}
+                User Retry Answer: {retry_answer}
+                
+                Is the user's retry answer correct?
+                Reply with only "CORRECT" or "INCORRECT"."""
+                
+                retry_response = llm.invoke(retry_prompt)
+                is_retry_correct = "CORRECT" in retry_response.content.upper()
+                
+                if is_retry_correct:
+                    print("✓ Correct! Good effort.")
+                    user_score += (weight / 2)
+                    state["question_weights"][question]["score"] = weight / 2
+                else:
+                    print("✗ Incorrect again. Moving to next question.")
+                    user_score -= 2
+                    state["question_weights"][question]["score"] = -2
         
         state["answers"].append(user_answer)
     
     state["user_score"] = user_score
+    print(f"\nEvaluation complete. Total score: {user_score}")
+    
     return state
-
 
 #node-3: Feedback provider
 #
