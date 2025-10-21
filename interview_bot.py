@@ -6,9 +6,7 @@ import os
 from dotenv import load_dotenv
 
 
-
 load_dotenv()
-
 
 
 class InterviewState(TypedDict):
@@ -18,7 +16,6 @@ class InterviewState(TypedDict):
     requirements: str
     greeting_shown: bool
     question_weights: Dict[str, dict]
-
 
 
 # node implementation
@@ -43,7 +40,7 @@ def safe_llm_invoke(llm, prompt, max_retries=3):
 # node-1: Question-Generator
 def node_1_generate_questions(state: InterviewState) -> InterviewState:
     """Generates interview questions and weights only"""
-    
+
     # Generate greeting-message
     if not state.get("greeting_shown", False):
         print("Hello, I am Anishom and I will be taking your interview today.")
@@ -68,7 +65,8 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     state["requirements"] = answers[2]
     state["question_weights"] = {}
 
-    llm = ChatGroq(model="llama-3.1-8b-instant", api_key=os.getenv("GROQ_API_KEY"))
+    llm = ChatGroq(model="llama-3.1-8b-instant",
+                   api_key=os.getenv("GROQ_API_KEY"))
 
     # Generate questions with "requirement(s)" - basic = 5
     basic_questions = [
@@ -83,22 +81,28 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     for q in basic_questions:
         state["question_weights"][q] = {"type": "basic", "weight": 0}
 
-    # Generate position-related questions: follow-up=13, scenario-based=6, individual=4
+
+    # Generate position-related questions
+    basic_questions = [
+        "Where are you currently living?",
+        "Tell us about your previous work experience.",
+        "Which university did you graduate from?",
+        "What was your major?",
+        "What are your future career plans?"
+    ]
+
+    # Assign weight to answer - basic questions have weight 0
+    for q in basic_questions:
+        state["question_weights"][q] = {"type": "basic", "weight": 0}
+
+    # Generate position-related questions = 23
     questions_prompt = f"""Generate 23 interview questions for {state['requirements']} skill with their weights:
 
-SCENARIO: [question]
-WEIGHT: [number 1-10]
-(repeat 6 times)
+    QUESTION: [question]
+    WEIGHT: [number 1-10]
+    (repeat 23 times)
 
-FOLLOWUP: [question]  
-WEIGHT: [number 1-10]
-(repeat 13 times)
-
-INDIVIDUAL: [question]
-WEIGHT: [number 1-10]
-(repeat 4 times)
-
-Generate practical questions that test {state['requirements']} knowledge."""
+    Generate practical questions that test {state['requirements']} knowledge and can be answered shortly."""
 
     print("Generating questions...")
     response = safe_llm_invoke(llm, questions_prompt)
@@ -111,16 +115,14 @@ Generate practical questions that test {state['requirements']} knowledge."""
     questions_text = response.content.strip()
     lines = questions_text.split("\n")
 
-    scenario_questions = []
-    followup_questions = []
-    individual_questions = []
+    position_questions = []
 
     i = 0
     while i < len(lines):
         line = lines[i].strip()
 
-        if line.startswith("SCENARIO:"):
-            question = line.replace("SCENARIO: ", "").strip()
+        if line.startswith("QUESTION:"):
+            question = line.replace("QUESTION: ", "").strip()
             weight = 5
             if i + 1 < len(lines) and lines[i + 1].strip().startswith("WEIGHT:"):
                 try:
@@ -128,34 +130,9 @@ Generate practical questions that test {state['requirements']} knowledge."""
                     weight = max(1, min(10, weight))
                 except:
                     weight = 5
-            scenario_questions.append(question)
-            state["question_weights"][question] = {"type": "scenario", "weight": weight}
-            i += 2
-
-        elif line.startswith("FOLLOWUP:"):
-            question = line.replace("FOLLOWUP: ", "").strip()
-            weight = 5
-            if i + 1 < len(lines) and lines[i + 1].strip().startswith("WEIGHT:"):
-                try:
-                    weight = float(lines[i + 1].replace("WEIGHT: ", "").strip())
-                    weight = max(1, min(10, weight))
-                except:
-                    weight = 5
-            followup_questions.append(question)
-            state["question_weights"][question] = {"type": "followup", "weight": weight}
-            i += 2
-
-        elif line.startswith("INDIVIDUAL:"):
-            question = line.replace("INDIVIDUAL: ", "").strip()
-            weight = 5
-            if i + 1 < len(lines) and lines[i + 1].strip().startswith("WEIGHT:"):
-                try:
-                    weight = float(lines[i + 1].replace("WEIGHT: ", "").strip())
-                    weight = max(1, min(10, weight))
-                except:
-                    weight = 5
-            individual_questions.append(question)
-            state["question_weights"][question] = {"type": "individual", "weight": weight}
+            position_questions.append(question)
+            state["question_weights"][question] = {
+                "type": "position-related", "weight": weight}
             i += 2
         else:
             i += 1
@@ -170,10 +147,10 @@ Generate practical questions that test {state['requirements']} knowledge."""
     for q in personal_questions:
         state["question_weights"][q] = {"type": "personal", "weight": 0}
 
-    all_questions = basic_questions + scenario_questions + followup_questions + individual_questions + personal_questions
+    all_questions = basic_questions + position_questions + personal_questions
     state["questions"].extend(all_questions)
 
-    print(f"✓ Basic: {len(basic_questions)}, Scenario: {len(scenario_questions)}, Follow-up: {len(followup_questions)}, Individual: {len(individual_questions)}, Personal: {len(personal_questions)}")
+    print(f"✓ Basic: {len(basic_questions)}, Position-related: {len(position_questions)}, Personal: {len(personal_questions)}")
 
     return state
 
@@ -187,7 +164,8 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
     user_score = 0
     wrong_questions = []
 
-    llm = ChatGroq(model="llama-3.1-8b-instant", api_key=os.getenv("GROQ_API_KEY"))
+    llm = ChatGroq(model="llama-3.1-8b-instant",
+                   api_key=os.getenv("GROQ_API_KEY"))
 
     # map scores of all questions with 0 initially
     for question in questions:
@@ -201,7 +179,8 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         print(f"\n{question}")
         user_answer = input("Your answer: ")
 
-        q_type = state["question_weights"].get(question, {}).get("type", "unknown")
+        q_type = state["question_weights"].get(
+            question, {}).get("type", "unknown")
         weight = state["question_weights"].get(question, {}).get("weight", 0)
 
         # pass = score -= 2, save the question
@@ -280,7 +259,8 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
                     print("✓ Correct! Good effort.")
                     user_score += (weight / 2)
                     state["question_weights"][question]["score"] = weight / 2
-                    wrong_questions.remove(question)  # Remove since retry was correct
+                    # Remove since retry was correct
+                    wrong_questions.remove(question)
                 else:
                     # incorrect = score -= 2
                     print("✗ Incorrect again.")
@@ -301,38 +281,40 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 # node-3: Feedback-Provider
 def node_3_provide_feedback(state: InterviewState) -> InterviewState:
     """Provides feedback based on performance"""
-    
+
     user_score = state.get("user_score", 0)
     wrong_questions = state.get("wrong_questions", [])
     requirements = state.get("requirements", "")
-    
+
     print("\n" + "="*50)
     print("           INTERVIEW FEEDBACK")
     print("="*50)
-    
+
     # congratulate if score >= 80%
     total_possible_score = sum(
-        state["question_weights"].get(q, {}).get("weight", 0) 
-        for q in state["questions"][3:] 
+        state["question_weights"].get(q, {}).get("weight", 0)
+        for q in state["questions"][3:]
         if state["question_weights"].get(q, {}).get("type") not in ["basic", "personal"]
     )
-    
+
     if total_possible_score > 0:
         percentage = (user_score / total_possible_score) * 100
-        print(f"Your Score: {user_score:.1f}/{total_possible_score} ({percentage:.1f}%)")
-        
+        print(
+            f"Your Score: {user_score:.1f}/{total_possible_score} ({percentage:.1f}%)")
+
         if percentage >= 80:
             print("\n CONGRATULATIONS! ")
             print("We look forward to working with you!")
         else:
             print("\n You need some improvement")
-    
+
     # not enough score: generate feedback with questions of wrong answers, send user the area of improvement
     if wrong_questions:
         print(f"\nAreas for Improvement ({len(wrong_questions)} questions):")
         print("-" * 40)
-        
-        llm = ChatGroq(model="llama-3.1-8b-instant", api_key=os.getenv("GROQ_API_KEY"))
+
+        llm = ChatGroq(model="llama-3.1-8b-instant",
+                       api_key=os.getenv("GROQ_API_KEY"))
 
         feedback_prompt = f"""Generate study feedback for someone who couldn't answer these {requirements} questions:
 
@@ -342,7 +324,7 @@ Provide study tips."""
 
         print("Generating feedback...")
         feedback_response = safe_llm_invoke(llm, feedback_prompt)
-        
+
         if feedback_response:
             print("\n" + feedback_response.content)
         else:
@@ -351,12 +333,13 @@ Provide study tips."""
                 print(f"{i}. {question}")
     else:
         pass
-    
+
     print("\n" + "="*50)
     print("Thank you for taking the interview!")
     print("="*50)
-    
+
     return state
+
 
 if __name__ == "__main__":
     initial_state = {
