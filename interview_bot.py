@@ -322,10 +322,10 @@ def node_3_provide_feedback(state: InterviewState) -> InterviewState:
         print(f"Your Score: {user_score:.1f}/{total_possible_score} ({percentage:.1f}%)")
         
         if percentage >= 80:
-            print("\n🎉 CONGRATULATIONS! 🎉")
+            print("\n CONGRATULATIONS! ")
             print("We look forward to working with you!")
         else:
-            print("\n📚 You need some improvement")
+            print("\n You need some improvement")
     
     # not enough score: generate feedback with questions of wrong answers, send user the area of improvement
     if wrong_questions:
