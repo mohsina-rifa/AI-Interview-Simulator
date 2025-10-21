@@ -21,10 +21,7 @@ The task is to build an interview bot using LangGraph nodes
 • Get answer from user
 • Generate questions with "requirement(s)":
     ◦ basic                 =   5
-    ◦ position-related:
-        · follow-up         =   13
-        · senario-based     =   6
-        · individual        =   4
+    ◦ position-related      =   23
     ◦ personal              =   2
 • Assign weight to answer
 _____________________________________________________________________________
