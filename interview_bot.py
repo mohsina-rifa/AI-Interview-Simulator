@@ -81,13 +81,18 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
         state["question_weights"][q] = {"type": "basic", "weight": 0}
 
     # Generate position-related questions = 23
-    questions_prompt = f"""Generate 23 interview questions for {state['requirements']} skill with their weights:
+    questions_prompt = f"""You are generating interview questions. Follow this EXACT format:
 
-    QUESTION: [question]
-    WEIGHT: [number 1-10]
-    (repeat 23 times)
+    QUESTION: What is {state['requirements']} used for?
+    WEIGHT: 7
 
-    Generate practical questions that test {state['requirements']} knowledge and can be answered shortly."""
+    QUESTION: How do you implement features in {state['requirements']}?
+    WEIGHT: 8
+
+    QUESTION: What are best practices in {state['requirements']}?
+    WEIGHT: 6
+
+    Generate exactly 23 questions following this format. Each question should test {state['requirements']} knowledge. Use weights 1-10 based on difficulty."""
 
     print("Generating questions...")
     response = safe_llm_invoke(llm, questions_prompt)
@@ -98,31 +103,54 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
 
     # Parse generated questions and weights
     questions_text = response.content.strip()
+    print(f"Debug - LLM Response:\n{questions_text[:300]}...")  # Debug output
     lines = questions_text.split("\n")
 
     position_questions = []
     total_weight = 0
 
     i = 0
-    while i < len(lines):
+    while i < len(lines) and len(position_questions) < 23:
         line = lines[i].strip()
         
-        if line.startswith("QUESTION:"):
-            question = line.replace("QUESTION: ", "").strip()
-            weight = 5
-            if i + 1 < len(lines) and lines[i + 1].strip().startswith("WEIGHT:"):
+        # Handle both formats: "QUESTION:" and "1. QUESTION:" or numbered variations
+        if "QUESTION:" in line:
+            # Extract question text after "QUESTION:"
+            question_part = line.split("QUESTION:")[1].strip()
+            weight = 5  # Default weight
+            
+            # Look for weight in the same line or next line
+            if "WEIGHT:" in line:
+                # Weight is on same line
+                parts = line.split("WEIGHT:")
+                if len(parts) > 1:
+                    try:
+                        weight = float(parts[1].strip())
+                        weight = max(1, min(10, weight))
+                    except:
+                        weight = 5
+            elif i + 1 < len(lines) and "WEIGHT:" in lines[i + 1]:
+                # Weight is on next line
                 try:
-                    weight = float(lines[i + 1].replace("WEIGHT: ", "").strip())
+                    weight_line = lines[i + 1].strip()
+                    weight_part = weight_line.split("WEIGHT:")[1].strip()
+                    weight = float(weight_part)
                     weight = max(1, min(10, weight))
                 except:
                     weight = 5
-            position_questions.append(question)
-            state["question_weights"][question] = {
-                "type": "position-related", "weight": weight}
-            total_weight += weight
-            i += 2
-        else:
-            i += 1
+            
+            if question_part:  # Only add non-empty questions
+                position_questions.append(question_part)
+                state["question_weights"][question_part] = {
+                    "type": "position-related", "weight": weight}
+                total_weight += weight
+                print(f"Added Q{len(position_questions)}: {question_part[:50]}... (Weight: {weight})")
+        
+        i += 1
+
+    # If we didn't get enough questions from LLM, show warning
+    if len(position_questions) < 5:
+        print(f"Warning: Only generated {len(position_questions)} questions. Continuing with what we have...")
 
     state["total_possible_score"] = total_weight
 
