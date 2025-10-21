@@ -19,7 +19,6 @@ class InterviewState(TypedDict):
 
 # Nodes
 
-
 def safe_llm_invoke(llm, prompt, max_retries=3):
     """Safely invoke LLM with retry logic"""
     for attempt in range(max_retries):
@@ -37,9 +36,9 @@ def safe_llm_invoke(llm, prompt, max_retries=3):
     return None
 
 
-# node-1: Question generator
+# node-1: Question generator (Questions + Weights only)
 def node_1_generate_questions(state: InterviewState) -> InterviewState:
-    """Generates interview questions AND answers based on the role"""
+    """Generates interview questions and weights only"""
 
     # Show greeting only once
     if not state.get("greeting_shown", False):
@@ -82,46 +81,39 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
         ]
 
         for q in basic_questions:
-            state["question_weights"][q] = {
-                "type": "basic", "weight": 0, "expected_answer": ""}
+            state["question_weights"][q] = {"type": "basic", "weight": 0}
 
-        # Generate position-related questions WITH answers using single LLM call
-        combined_prompt = f"""Generate 23 interview questions for {requirement} skill with their expected answers in this exact format:
+        # Generate position-related questions with weights only
+        questions_prompt = f"""Generate 23 interview questions for {requirement} skill with their weights in this exact format:
 
 SCENARIO: [question]
-ANSWER: [detailed answer demonstrating {requirement} expertise]
 WEIGHT: [number 1-10 based on importance]
 
-SCENARIO: [question]
-ANSWER: [detailed answer demonstrating {requirement} expertise]
+SCENARIO: [question]  
 WEIGHT: [number 1-10 based on importance]
 
 (repeat 7 times for SCENARIO)
 
 FOLLOWUP: [question]
-ANSWER: [detailed answer demonstrating {requirement} expertise]
 WEIGHT: [number 1-10 based on importance]
 
 FOLLOWUP: [question]
-ANSWER: [detailed answer demonstrating {requirement} expertise]
 WEIGHT: [number 1-10 based on importance]
 
 (repeat 14 times for FOLLOWUP)
 
 INDEPENDENT: [question]
-ANSWER: [detailed answer demonstrating {requirement} expertise]
 WEIGHT: [number 1-10 based on importance]
 
 INDEPENDENT: [question]
-ANSWER: [detailed answer demonstrating {requirement} expertise]
 WEIGHT: [number 1-10 based on importance]
 
 (repeat 6 times for INDEPENDENT)
 
 Generate practical, relevant questions that test real {requirement} knowledge."""
 
-        print("Generating questions and answers...")
-        response = safe_llm_invoke(llm, combined_prompt)
+        print("Generating questions...")
+        response = safe_llm_invoke(llm, questions_prompt)
 
         if response is None:
             print("Failed to generate questions. Using fallback.")
@@ -140,16 +132,13 @@ Generate practical, relevant questions that test real {requirement} knowledge.""
 
             if line.startswith("SCENARIO:"):
                 question = line.replace("SCENARIO: ", "").strip()
-                answer = ""
                 weight = 5
 
-                # Get answer and weight from next lines
-                if i + 1 < len(lines) and lines[i + 1].strip().startswith("ANSWER:"):
-                    answer = lines[i + 1].replace("ANSWER: ", "").strip()
-                if i + 2 < len(lines) and lines[i + 2].strip().startswith("WEIGHT:"):
+                # Get weight from next line
+                if i + 1 < len(lines) and lines[i + 1].strip().startswith("WEIGHT:"):
                     try:
                         weight = float(
-                            lines[i + 2].replace("WEIGHT: ", "").strip())
+                            lines[i + 1].replace("WEIGHT: ", "").strip())
                         weight = max(1, min(10, weight))
                     except:
                         weight = 5
@@ -157,22 +146,18 @@ Generate practical, relevant questions that test real {requirement} knowledge.""
                 scenario_questions.append(question)
                 state["question_weights"][question] = {
                     "type": "scenario",
-                    "weight": weight,
-                    "expected_answer": answer
+                    "weight": weight
                 }
-                i += 3
+                i += 2
 
             elif line.startswith("FOLLOWUP:"):
                 question = line.replace("FOLLOWUP: ", "").strip()
-                answer = ""
                 weight = 5
 
-                if i + 1 < len(lines) and lines[i + 1].strip().startswith("ANSWER:"):
-                    answer = lines[i + 1].replace("ANSWER: ", "").strip()
-                if i + 2 < len(lines) and lines[i + 2].strip().startswith("WEIGHT:"):
+                if i + 1 < len(lines) and lines[i + 1].strip().startswith("WEIGHT:"):
                     try:
                         weight = float(
-                            lines[i + 2].replace("WEIGHT: ", "").strip())
+                            lines[i + 1].replace("WEIGHT: ", "").strip())
                         weight = max(1, min(10, weight))
                     except:
                         weight = 5
@@ -180,22 +165,18 @@ Generate practical, relevant questions that test real {requirement} knowledge.""
                 followup_questions.append(question)
                 state["question_weights"][question] = {
                     "type": "followup",
-                    "weight": weight,
-                    "expected_answer": answer
+                    "weight": weight
                 }
-                i += 3
+                i += 2
 
             elif line.startswith("INDEPENDENT:"):
                 question = line.replace("INDEPENDENT: ", "").strip()
-                answer = ""
                 weight = 5
 
-                if i + 1 < len(lines) and lines[i + 1].strip().startswith("ANSWER:"):
-                    answer = lines[i + 1].replace("ANSWER: ", "").strip()
-                if i + 2 < len(lines) and lines[i + 2].strip().startswith("WEIGHT:"):
+                if i + 1 < len(lines) and lines[i + 1].strip().startswith("WEIGHT:"):
                     try:
                         weight = float(
-                            lines[i + 2].replace("WEIGHT: ", "").strip())
+                            lines[i + 1].replace("WEIGHT: ", "").strip())
                         weight = max(1, min(10, weight))
                     except:
                         weight = 5
@@ -203,10 +184,9 @@ Generate practical, relevant questions that test real {requirement} knowledge.""
                 independent_questions.append(question)
                 state["question_weights"][question] = {
                     "type": "independent",
-                    "weight": weight,
-                    "expected_answer": answer
+                    "weight": weight
                 }
-                i += 3
+                i += 2
             else:
                 i += 1
 
@@ -217,8 +197,7 @@ Generate practical, relevant questions that test real {requirement} knowledge.""
         ]
 
         for q in personal_questions:
-            state["question_weights"][q] = {
-                "type": "personal", "weight": 0, "expected_answer": ""}
+            state["question_weights"][q] = {"type": "personal", "weight": 0}
 
         all_questions = basic_questions + scenario_questions + \
             followup_questions + independent_questions + personal_questions
@@ -237,17 +216,17 @@ Generate practical, relevant questions that test real {requirement} knowledge.""
     return state
 
 
-# node-2: Answer evaluator
+# node-2: Answer evaluator (Evaluate with LLM)
 def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
-    """Evaluates answers based on the pre-generated questionset"""
+    """Evaluates answers using LLM evaluation"""
 
-    questions = state["questions"][3:]
+    questions = state["questions"][3:]  # Skip the first 3 starter questions
     user_score = 0
 
     llm = ChatGroq(model="llama-3.1-8b-instant",
                    api_key=os.getenv("GROQ_API_KEY"))
 
-    # Map scores of all questions with 0 initially
+    # Initialize scores
     for question in questions:
         if "score" not in state["question_weights"].get(question, {}):
             state["question_weights"][question]["score"] = 0
@@ -262,8 +241,6 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         q_type = state["question_weights"].get(
             question, {}).get("type", "unknown")
         weight = state["question_weights"].get(question, {}).get("weight", 0)
-        expected_answer = state["question_weights"].get(
-            question, {}).get("expected_answer", "")
 
         # Check for "don't know" response (pass)
         if "don't" in user_answer.lower() and "know" in user_answer.lower():
@@ -275,39 +252,24 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 
         # For basic and personal questions, just record with 0
         if q_type in ["basic", "personal"]:
+            print("✓ Noted.")
             state["question_weights"][question]["score"] = 0
             state["answers"].append(user_answer)
             continue
 
-        # Evaluate answer using LLM for position-related questions only
-        eval_prompt = f"""You are strictly evaluating a {state['requirements']} technical interview answer. Be very strict in your evaluation.
+        # Check for obviously wrong answers first
+        wrong_indicators = [
+            "plain text", "plaintext", "without hashing",
+            "raw sql without", "no security", "disable csrf",
+            "store passwords directly", "unencrypted passwords"
+        ]
 
-        Question: {question}
-        Expected Answer: {expected_answer}
-        User Answer: {user_answer}
+        user_lower = user_answer.lower()
+        is_obviously_wrong = any(
+            indicator in user_lower for indicator in wrong_indicators)
 
-        Does the user's answer demonstrate correct understanding of {state['requirements']} concepts and match the expected answer's technical accuracy?
-
-        IMPORTANT: 
-        - If the user answer contradicts best practices, mark as INCORRECT
-        - If the user answer is technically wrong, mark as INCORRECT
-        - Only mark CORRECT if the answer shows proper understanding
-
-        Reply with only "CORRECT" or "INCORRECT"."""
-
-        eval_response = safe_llm_invoke(llm, eval_prompt)
-        if eval_response is None:
-            print("✗ Evaluation failed. Skipping.")
-            continue
-
-        is_correct = "CORRECT" in eval_response.content.upper()
-
-        if is_correct:
-            print("✓ Correct! Well done.")
-            user_score += weight
-            state["question_weights"][question]["score"] = weight
-        else:
-            print("✗ Incorrect.")
+        if is_obviously_wrong:
+            print("✗ Incorrect - Contains security violations or bad practices.")
             user_score -= 1
             state["question_weights"][question]["score"] = -1
 
@@ -315,23 +277,27 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             print("Please try again:")
             retry_answer = input("Your answer: ")
 
-            # Check if user passes on second chance
             if "don't" in retry_answer.lower() and "know" in retry_answer.lower():
                 print("✗ Passed on second chance.")
                 user_score -= 3
                 state["question_weights"][question]["score"] = -3
             else:
-                # Evaluate second attempt
-                retry_prompt = f"""Compare the user's retry answer with the expected answer:
-                
+                # Evaluate retry with LLM
+                retry_eval_prompt = f"""Evaluate this {state['requirements']} technical answer:
+
                 Question: {question}
-                Expected Answer: {expected_answer}
-                User Retry Answer: {retry_answer}
-                
-                Is the user's retry answer correct?
+                User Answer: {retry_answer}
+
+                Is this answer technically correct and follows {state['requirements']} best practices?
+
+                STRICT CRITERIA:
+                - Must be technically accurate
+                - Must follow security best practices
+                - Must demonstrate proper understanding
+
                 Reply with only "CORRECT" or "INCORRECT"."""
 
-                retry_response = safe_llm_invoke(llm, retry_prompt)
+                retry_response = safe_llm_invoke(llm, retry_eval_prompt)
                 if retry_response is None:
                     print("✗ Evaluation failed. Moving on.")
                     continue
@@ -346,6 +312,76 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
                     print("✗ Incorrect again. Moving to next question.")
                     user_score -= 2
                     state["question_weights"][question]["score"] = -2
+
+        else:
+            # Evaluate answer using LLM for position-related questions
+            eval_prompt = f"""Evaluate this {state['requirements']} technical interview answer:
+
+            Question: {question}
+            User Answer: {user_answer}
+
+            EVALUATION CRITERIA:
+            - Is the answer technically correct for {state['requirements']}?
+            - Does it follow best practices?
+            - Does it demonstrate proper understanding?
+
+            MARK AS INCORRECT if:
+            - Contains security violations
+            - Goes against best practices
+            - Is technically wrong
+            - Shows poor understanding
+
+            Reply with only "CORRECT" or "INCORRECT"."""
+
+            eval_response = safe_llm_invoke(llm, eval_prompt)
+            if eval_response is None:
+                print("✗ Evaluation failed. Skipping.")
+                continue
+
+            is_correct = "CORRECT" in eval_response.content.upper()
+
+            if is_correct:
+                print("✓ Correct! Well done.")
+                user_score += weight
+                state["question_weights"][question]["score"] = weight
+            else:
+                print("✗ Incorrect.")
+                user_score -= 1
+                state["question_weights"][question]["score"] = -1
+
+                # Second chance
+                print("Please try again:")
+                retry_answer = input("Your answer: ")
+
+                if "don't" in retry_answer.lower() and "know" in retry_answer.lower():
+                    print("✗ Passed on second chance.")
+                    user_score -= 3
+                    state["question_weights"][question]["score"] = -3
+                else:
+                    # Evaluate second attempt
+                    retry_prompt = f"""Evaluate this retry answer for {state['requirements']}:
+                    
+                    Question: {question}
+                    User Retry Answer: {retry_answer}
+                    
+                    Is this answer correct?
+                    Reply with only "CORRECT" or "INCORRECT"."""
+
+                    retry_response = safe_llm_invoke(llm, retry_prompt)
+                    if retry_response is None:
+                        print("✗ Evaluation failed. Moving on.")
+                        continue
+
+                    is_retry_correct = "CORRECT" in retry_response.content.upper()
+
+                    if is_retry_correct:
+                        print("✓ Correct! Good effort.")
+                        user_score += (weight / 2)
+                        state["question_weights"][question]["score"] = weight / 2
+                    else:
+                        print("✗ Incorrect again. Moving to next question.")
+                        user_score -= 2
+                        state["question_weights"][question]["score"] = -2
 
         state["answers"].append(user_answer)
 
