@@ -39,12 +39,16 @@ ______________________________________▼______________________________________
     ◦ incorrect :   score -= 1
                     second chance   :   correct     :   score += weight / 2
                                         incorrect   :   score -= 2
+                                                        save the question
                                         pass        :   score -= 3
+                                                        save the question
     ◦ pass      :   score -= 2
+                    save the question
 _____________________________________________________________________________
 ______________________________________▼______________________________________
 
 **node-3**:
+• receieve saved-question
 • congratulate if score >= 80%
 • not enough score:
     ◦ generate feedback with questions of wrong answers
