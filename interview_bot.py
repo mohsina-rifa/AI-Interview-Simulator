@@ -5,7 +5,11 @@ from langgraph.graph import StateGraph, END
 import os
 from dotenv import load_dotenv
 
+
+
 load_dotenv()
+
+
 
 class InterviewState(TypedDict):
     role: str
@@ -14,9 +18,13 @@ class InterviewState(TypedDict):
     requirements: str
     greeting_shown: bool
     question_weights: Dict[str, dict]
-    user_score: float  # Added to TypedDict
-    wrong_questions: List[str]  # Added to TypedDict
-    total_possible_score: float  # Added to TypedDict
+    user_score: float
+    wrong_questions: List[str]
+    total_possible_score: float
+
+
+
+# node implementation
 
 def safe_llm_invoke(llm, prompt, max_retries=3):
     """Safely invoke LLM with retry logic"""
@@ -34,22 +42,25 @@ def safe_llm_invoke(llm, prompt, max_retries=3):
                 raise e
     return None
 
+
+
+# node-1 : Question-Generator
 def node_1_generate_questions(state: InterviewState) -> InterviewState:
     """Generates interview questions and weights only"""
     
-    # Generate greeting-message
+    # greeting user
     if not state.get("greeting_shown", False):
         print("Hello, I am Anishom and I will be taking your interview today.")
         state["greeting_shown"] = True
 
-    # Ask starting-questions: name, applied-position, requirements
+    # starting-questions
     starting_questions = [
         "What is your name?",
         "What position have you applied for?", 
         "What were the requirements for that?"
     ]
 
-    # Get answer from user
+    # get answers
     answers = []
     for question in starting_questions:
         print(f"\n{question}")
@@ -67,7 +78,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     llm = ChatGroq(model="llama-3.1-8b-instant",
                    api_key=os.getenv("GROQ_API_KEY"))
 
-    # Generate basic questions = 5
+    # basic questions = 5
     basic_questions = [
         "Where are you currently living?",
         "Tell us about your previous work experience.",
@@ -76,11 +87,11 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
         "What are your future career plans?"
     ]
 
-    # Assign weight to answer - basic questions have weight 0
+    # weight(basic-question) = 0
     for q in basic_questions:
         state["question_weights"][q] = {"type": "basic", "weight": 0}
 
-    # Generate position-related questions = 23
+    # position-related questions = 23
     questions_prompt = f"""You are generating interview questions. Follow this EXACT format:
 
     QUESTION: What is {state['requirements']} used for?
@@ -101,9 +112,9 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
         print("Failed to generate questions.")
         return state
 
-    # Parse generated questions and weights
+    # parse
     questions_text = response.content.strip()
-    print(f"Debug - LLM Response:\n{questions_text[:300]}...")  # Debug output
+    print(f"Debug - LLM Response:\n{questions_text[:300]}...")
     lines = questions_text.split("\n")
 
     position_questions = []
@@ -113,15 +124,16 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     while i < len(lines) and len(position_questions) < 23:
         line = lines[i].strip()
         
-        # Handle both formats: "QUESTION:" and "1. QUESTION:" or numbered variations
+        # handle formats: "QUESTION:" and "1. QUESTION:" or numbered variations
         if "QUESTION:" in line:
-            # Extract question text after "QUESTION:"
+            # extract question text [after "QUESTION:"]
             question_part = line.split("QUESTION:")[1].strip()
-            weight = 5  # Default weight
+            # default
+            weight = 5  
             
-            # Look for weight in the same line or next line
+            # weight : same-line / next-line
             if "WEIGHT:" in line:
-                # Weight is on same line
+                # same line
                 parts = line.split("WEIGHT:")
                 if len(parts) > 1:
                     try:
@@ -130,7 +142,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
                     except:
                         weight = 5
             elif i + 1 < len(lines) and "WEIGHT:" in lines[i + 1]:
-                # Weight is on next line
+                # next line
                 try:
                     weight_line = lines[i + 1].strip()
                     weight_part = weight_line.split("WEIGHT:")[1].strip()
@@ -139,7 +151,8 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
                 except:
                     weight = 5
             
-            if question_part:  # Only add non-empty questions
+            # non-empty questions
+            if question_part:  
                 position_questions.append(question_part)
                 state["question_weights"][question_part] = {
                     "type": "position-related", "weight": weight}
@@ -148,7 +161,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
         
         i += 1
 
-    # If we didn't get enough questions from LLM, show warning
+    # didn't get enough questions from LLM
     if len(position_questions) < 5:
         print(f"Warning: Only generated {len(position_questions)} questions. Continuing with what we have...")
 
@@ -160,7 +173,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
         "Why do you think you are a good candidate for this position?"
     ]
 
-    # Assign weight to answer - personal questions have weight 0
+    # weight(personal-question) = 0
     for q in personal_questions:
         state["question_weights"][q] = {"type": "personal", "weight": 0}
 
@@ -171,25 +184,28 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
 
     return state
 
+
+
+# node-2 : Answer-Evaluator
 def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
     """Evaluates answers using LLM evaluation"""
     
     # receive question-set
-    questions = state["questions"][3:]  # Skip the first 3 starter questions
+    questions = state["questions"][3:]  
     user_score = 0
     wrong_questions = []
 
     llm = ChatGroq(model="llama-3.1-8b-instant",
                    api_key=os.getenv("GROQ_API_KEY"))
 
-    # map scores of all questions with 0 initially
+    # map scores : 0 initially
     for question in questions:
         if "score" not in state["question_weights"].get(question, {}):
             state["question_weights"][question]["score"] = 0
 
     print("Starting interview evaluation...\n")
 
-    # ask one by one and evaluate only the position-related questions
+    # ask one by one 
     for question in questions:
         print(f"\n{question}")
         user_answer = input("Your answer: ")
@@ -198,23 +214,14 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             question, {}).get("type", "unknown")
         weight = state["question_weights"].get(question, {}).get("weight", 0)
 
-        # pass = score -= 2, save the question
-        if "don't" in user_answer.lower() and "know" in user_answer.lower():
-            print("✗ Moving to next question.")
-            user_score -= 2
-            state["question_weights"][question]["score"] = -2
-            wrong_questions.append(question)
-            state["answers"].append(user_answer)
-            continue
-
-        # For basic and personal questions, just record
+        # basic and personal questions : just record
         if q_type in ["basic", "personal"]:
             print("✓ Noted.")
             state["question_weights"][question]["score"] = 0
             state["answers"].append(user_answer)
             continue
 
-        # evaluate only the position-related questions using LLM
+        # position-related questions : evaluate using LLM
         eval_prompt = f"""Evaluate this {state['requirements']} interview answer:
 
         Question: {question}
@@ -236,6 +243,14 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             print("✓ Correct! Well done.")
             user_score += weight
             state["question_weights"][question]["score"] = weight
+        elif "don't know" in user_answer.lower():
+            # pass = score -= 2, save the question
+            print("✗ Moving to next question.")
+            user_score -= 2
+            state["question_weights"][question]["score"] = -2
+            wrong_questions.append(question)
+            state["answers"].append(user_answer)
+            continue
         else:
             # incorrect = score -= 1
             print("✗ Incorrect.")
@@ -247,7 +262,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             print("Please try again:")
             retry_answer = input("Your answer: ")
 
-            if "don't" in retry_answer.lower() and "know" in retry_answer.lower():
+            if "don't know" in retry_answer.lower():
                 # pass = score -= 3, save the question
                 print("✗ Passed on second chance.")
                 user_score -= 3
@@ -282,7 +297,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
                     user_score -= 2
                     state["question_weights"][question]["score"] = -2
 
-        # Store original answer, not retry
+        # original answer
         state["answers"].append(user_answer)
 
     state["user_score"] = user_score
@@ -293,6 +308,9 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 
     return state
 
+
+
+# node-3 : Feedback-Provider
 def node_3_provide_feedback(state: InterviewState) -> InterviewState:
     """Provides feedback based on performance"""
     
@@ -349,17 +367,19 @@ Provide study tips."""
 
     return state
 
+
+
 def create_interview_graph():
     """Create and configure the LangGraph workflow"""
     
     workflow = StateGraph(InterviewState)
     
-    # Add nodes
+    # add nodes
     workflow.add_node("generate_questions", node_1_generate_questions)
     workflow.add_node("evaluate_answers", node_2_evaluate_answers)  
     workflow.add_node("provide_feedback", node_3_provide_feedback)
     
-    # Define the flow
+    # define flow
     workflow.set_entry_point("generate_questions")
     workflow.add_edge("generate_questions", "evaluate_answers")
     workflow.add_edge("evaluate_answers", "provide_feedback")
@@ -367,8 +387,10 @@ def create_interview_graph():
     
     return workflow.compile()
 
+
+
 if __name__ == "__main__":
-    # Initialize state with all required fields
+    # initialize state
     initial_state: InterviewState = {
         "role": "",
         "questions": [],
@@ -381,7 +403,7 @@ if __name__ == "__main__":
         "total_possible_score": 0.0
     }
 
-    # Create and run the LangGraph workflow
+    # create and run LangGraph workflow
     app = create_interview_graph()
     result = app.invoke(initial_state)
     
