@@ -1,14 +1,14 @@
 from langchain_groq import ChatGroq
+from langchain_google_genai import ChatGoogleGenerativeAI
 import time
 from typing import Dict, List, TypedDict
 from langgraph.graph import StateGraph, END
 import os
+import re
 from dotenv import load_dotenv
 
 
-
 load_dotenv()
-
 
 
 class InterviewState(TypedDict):
@@ -21,7 +21,6 @@ class InterviewState(TypedDict):
     user_score: float
     wrong_questions: List[str]
     total_possible_score: float
-
 
 
 # node implementation
@@ -43,11 +42,10 @@ def safe_llm_invoke(llm, prompt, max_retries=3):
     return None
 
 
-
 # node-1 : Question-Generator
 def node_1_generate_questions(state: InterviewState) -> InterviewState:
     """Generates interview questions and weights only"""
-    
+
     # greeting user
     if not state.get("greeting_shown", False):
         print("Hello, I am Anishom and I will be taking your interview today.")
@@ -56,7 +54,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     # starting-questions
     starting_questions = [
         "What is your name?",
-        "What position have you applied for?", 
+        "What position have you applied for?",
         "What were the requirements for that?"
     ]
 
@@ -75,14 +73,17 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     state["wrong_questions"] = []
     state["total_possible_score"] = 0.0
 
-    llm = ChatGroq(model="llama-3.1-8b-instant",
-                   api_key=os.getenv("GROQ_API_KEY"))
+    # llm = ChatGroq(model="llama-3.1-8b-instant",
+    #                api_key=os.getenv("GROQ_API_KEY"))
+
+    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite",
+                                 api_key=os.getenv("GEMINI_API_KEY"))
 
     # basic questions = 5
     basic_questions = [
         "Where are you currently living?",
         "Tell us about your previous work experience.",
-        "Which university did you graduate from?", 
+        "Which university did you graduate from?",
         "What was your major?",
         "What are your future career plans?"
     ]
@@ -123,14 +124,14 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     i = 0
     while i < len(lines) and len(position_questions) < 23:
         line = lines[i].strip()
-        
+
         # handle formats: "QUESTION:" and "1. QUESTION:" or numbered variations
         if "QUESTION:" in line:
             # extract question text [after "QUESTION:"]
             question_part = line.split("QUESTION:")[1].strip()
             # default
-            weight = 5  
-            
+            weight = 5
+
             # weight : same-line / next-line
             if "WEIGHT:" in line:
                 # same line
@@ -150,20 +151,22 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
                     weight = max(1, min(10, weight))
                 except:
                     weight = 5
-            
+
             # non-empty questions
-            if question_part:  
+            if question_part:
                 position_questions.append(question_part)
                 state["question_weights"][question_part] = {
                     "type": "position-related", "weight": weight}
                 total_weight += weight
-                print(f"Added Q{len(position_questions)}: {question_part[:50]}... (Weight: {weight})")
-        
+                print(
+                    f"Added Q{len(position_questions)}: {question_part[:50]}... (Weight: {weight})")
+
         i += 1
 
     # didn't get enough questions from LLM
     if len(position_questions) < 5:
-        print(f"Warning: Only generated {len(position_questions)} questions. Continuing with what we have...")
+        print(
+            f"Warning: Only generated {len(position_questions)} questions. Continuing with what we have...")
 
     state["total_possible_score"] = total_weight
 
@@ -185,18 +188,20 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     return state
 
 
-
 # node-2 : Answer-Evaluator
 def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
     """Evaluates answers using LLM evaluation"""
-    
+
     # receive question-set
-    questions = state["questions"][3:]  
+    questions = state["questions"][3:]
     user_score = 0
     wrong_questions = []
 
-    llm = ChatGroq(model="llama-3.1-8b-instant",
-                   api_key=os.getenv("GROQ_API_KEY"))
+    # llm = ChatGroq(model="llama-3.1-8b-instant",
+    #                api_key=os.getenv("GROQ_API_KEY"))
+
+    llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite",
+                                 api_key=os.getenv("GEMINI_API_KEY"))
 
     # map scores : 0 initially
     for question in questions:
@@ -205,7 +210,10 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 
     print("Starting interview evaluation...\n")
 
-    # ask one by one 
+    # ask one by one
+    dontknow_pattern = re.compile(
+        r"\b(?:don'?t\s?know|dont\s?know|dontknow|idk)\b", re.IGNORECASE)
+
     for question in questions:
         print(f"\n{question}")
         user_answer = input("Your answer: ")
@@ -218,6 +226,16 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         if q_type in ["basic", "personal"]:
             print("✓ Noted.")
             state["question_weights"][question]["score"] = 0
+            state["answers"].append(user_answer)
+            continue
+
+        # quick-skip if user explicitly says they don't know
+        if dontknow_pattern.search(user_answer):
+            # pass = score -= 2, save the question
+            print("✗ Moving to next question.")
+            user_score -= 2
+            state["question_weights"][question]["score"] = -2
+            wrong_questions.append(question)
             state["answers"].append(user_answer)
             continue
 
@@ -243,14 +261,6 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             print("✓ Correct! Well done.")
             user_score += weight
             state["question_weights"][question]["score"] = weight
-        elif "don't know" in user_answer.lower():
-            # pass = score -= 2, save the question
-            print("✗ Moving to next question.")
-            user_score -= 2
-            state["question_weights"][question]["score"] = -2
-            wrong_questions.append(question)
-            state["answers"].append(user_answer)
-            continue
         else:
             # incorrect = score -= 1
             print("✗ Incorrect.")
@@ -262,7 +272,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             print("Please try again:")
             retry_answer = input("Your answer: ")
 
-            if "don't know" in retry_answer.lower():
+            if dontknow_pattern.search(retry_answer):
                 # pass = score -= 3, save the question
                 print("✗ Passed on second chance.")
                 user_score -= 3
@@ -309,11 +319,10 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
     return state
 
 
-
 # node-3 : Feedback-Provider
 def node_3_provide_feedback(state: InterviewState) -> InterviewState:
     """Provides feedback based on performance"""
-    
+
     user_score = state.get("user_score", 0)
     wrong_questions = state.get("wrong_questions", [])
     requirements = state.get("requirements", "")
@@ -342,8 +351,11 @@ def node_3_provide_feedback(state: InterviewState) -> InterviewState:
         print(f"\nAreas for Improvement ({len(wrong_questions)} questions):")
         print("-" * 40)
 
-        llm = ChatGroq(model="llama-3.1-8b-instant",
-                       api_key=os.getenv("GROQ_API_KEY"))
+        # llm = ChatGroq(model="llama-3.1-8b-instant",
+        #                api_key=os.getenv("GROQ_API_KEY"))
+
+        llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite",
+                                     api_key=os.getenv("GEMINI_API_KEY"))
 
         feedback_prompt = f"""Generate study feedback for someone who couldn't answer these {requirements} questions:
 
@@ -368,25 +380,23 @@ Provide study tips."""
     return state
 
 
-
 def create_interview_graph():
     """Create and configure the LangGraph workflow"""
-    
+
     workflow = StateGraph(InterviewState)
-    
+
     # add nodes
     workflow.add_node("generate_questions", node_1_generate_questions)
-    workflow.add_node("evaluate_answers", node_2_evaluate_answers)  
+    workflow.add_node("evaluate_answers", node_2_evaluate_answers)
     workflow.add_node("provide_feedback", node_3_provide_feedback)
-    
+
     # define flow
     workflow.set_entry_point("generate_questions")
     workflow.add_edge("generate_questions", "evaluate_answers")
     workflow.add_edge("evaluate_answers", "provide_feedback")
     workflow.add_edge("provide_feedback", END)
-    
-    return workflow.compile()
 
+    return workflow.compile()
 
 
 if __name__ == "__main__":
@@ -406,5 +416,5 @@ if __name__ == "__main__":
     # create and run LangGraph workflow
     app = create_interview_graph()
     result = app.invoke(initial_state)
-    
+
     print("\n🏁 Interview process completed!")
