@@ -6,6 +6,8 @@ from langgraph.graph import StateGraph, END
 import os
 import re
 from dotenv import load_dotenv
+import streamlit as st
+import queue
 
 
 load_dotenv()
@@ -21,32 +23,67 @@ class InterviewState(TypedDict):
     user_score: float
     wrong_questions: List[str]
     total_possible_score: float
-    
-    
-    
+
+
 # Input-output helper
+user_input_queue = None
+bot_output_queue = None
+
+
+def initialize_queues():
+    """Initialize the queues from session state if running in Streamlit"""
+    global user_input_queue, bot_output_queue
+    try:
+        if hasattr(st, 'session_state'):
+            user_input_queue = st.session_state.get('user_input_queue')
+            bot_output_queue = st.session_state.get('bot_output_queue')
+    except:
+        pass
+
+
 def input_user(prompt: str) -> str:
     """
-    Receives user response from the UI via Django app.
-    For now, this is a placeholder for integration.
-    Replace this with logic to fetch user input from Django when integrating.
+    Receives user response from the UI via Streamlit app.
+    In CLI mode, falls back to standard input.
     """
-    # TODO: Integrate with Django app to receive user input from UI
-    return input(prompt)
+    initialize_queues()
+
+    # Check if running in Streamlit mode
+    if bot_output_queue is not None and user_input_queue is not None:
+        # Send prompt to UI
+        bot_output_queue.put(prompt)
+
+        # Wait for user input from UI with proper timeout
+        while True:
+            try:
+                user_response = user_input_queue.get(
+                    timeout=1.0)  # ✅ Changed to 1.0
+                return user_response
+            except queue.Empty:
+                continue
+    else:
+        # Fallback to CLI mode
+        return input(prompt)
 
 
 def print_bot(message: str) -> None:
     """
-    Sends bot response to the UI via Django app.
-    For now, this wraps the built-in print().
-    Replace this with Django integration later.
+    Sends bot response to the UI via Streamlit app.
+    In CLI mode, falls back to standard print.
     """
-    # TODO: Integrate with Django app to send bot messages to UI
-    print(message)
+    initialize_queues()
 
-
+    # Check if running in Streamlit mode
+    if bot_output_queue is not None:
+        bot_output_queue.put(message)
+        # ✅ Increased delay and removed duplicate import
+        time.sleep(0.2)
+    else:
+        # Fallback to CLI mode
+        print(message)
 
 # node implementation
+
 
 def safe_llm_invoke(llm, prompt, max_retries=3):
     """Safely invoke LLM with retry logic"""
@@ -206,7 +243,8 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     all_questions = basic_questions + position_questions + personal_questions
     state["questions"].extend(all_questions)
 
-    print_bot(f"✓ Basic: {len(basic_questions)}, Position-related: {len(position_questions)}, Personal: {len(personal_questions)}")
+    print_bot(
+        f"✓ Basic: {len(basic_questions)}, Position-related: {len(position_questions)}, Personal: {len(personal_questions)}")
 
     return state
 
@@ -371,7 +409,8 @@ def node_3_provide_feedback(state: InterviewState) -> InterviewState:
 
     # not enough score: generate feedback with questions of wrong answers
     if wrong_questions:
-        print_bot(f"\nAreas for Improvement ({len(wrong_questions)} questions):")
+        print_bot(
+            f"\nAreas for Improvement ({len(wrong_questions)} questions):")
         print_bot("-" * 40)
 
         # llm = ChatGroq(model="llama-3.1-8b-instant",

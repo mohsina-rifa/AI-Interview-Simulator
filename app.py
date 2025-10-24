@@ -1,100 +1,197 @@
-import interview_bot
 import streamlit as st
-from interview_bot import InterviewState, node_1_generate_questions, node_2_evaluate_answers, node_3_provide_feedback
+import threading
+import queue
+import time
+from interview_bot import create_interview_graph, InterviewState
 
-# Initialize Streamlit session state
-if "interview_state" not in st.session_state:
-    st.session_state.interview_state = {
-        "role": "",
-        "questions": [],
-        "answers": [],
-        "requirements": "",
-        "greeting_shown": False,
-        "question_weights": {},
-        "user_score": 0.0,
-        "wrong_questions": [],
-        "total_possible_score": 0.0
+# Initialize session state
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
+if 'user_input_queue' not in st.session_state:
+    st.session_state.user_input_queue = queue.Queue()
+if 'bot_output_queue' not in st.session_state:
+    st.session_state.bot_output_queue = queue.Queue()
+if 'interview_started' not in st.session_state:
+    st.session_state.interview_started = False
+if 'waiting_for_input' not in st.session_state:
+    st.session_state.waiting_for_input = False
+if 'interview_thread' not in st.session_state:
+    st.session_state.interview_thread = None
+if 'interview_completed' not in st.session_state:
+    st.session_state.interview_completed = False
+
+# Page config
+st.set_page_config(page_title="AI Interview Bot", page_icon="🤖", layout="wide")
+
+# Custom CSS for better chat UI
+st.markdown("""
+<style>
+    .stChatMessage {
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin-bottom: 1rem;
     }
-if "step" not in st.session_state:
-    st.session_state.step = 0  # 0: greet/generate, 1: ask questions, 2: feedback
-if "history" not in st.session_state:
-    st.session_state.history = []  # list of (speaker, message)
-if "current_question_index" not in st.session_state:
-    st.session_state.current_question_index = 0
+    .stButton button {
+        width: 100%;
+    }
+    div[data-testid="stChatMessageContent"] {
+        padding: 1rem;
+    }
+    /* Auto-scroll to bottom */
+    .main .block-container {
+        padding-bottom: 5rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Title
+st.title("🤖 AI Interview Bot")
+st.markdown("---")
 
 
-def input_user_streamlit(prompt: str) -> str:
-    st.session_state.history.append(("bot", prompt))
-    st.markdown(f"**{prompt}**")
-    user_input = st.text_input(
-        "Your answer:", key=f"user_input_{st.session_state.current_question_index}")
-    if st.button("Submit", key=f"submit_{st.session_state.current_question_index}"):
-        st.session_state.history.append(("user", user_input))
-        st.session_state.current_question_index += 1
-        return user_input
-    st.stop()  # Wait for user input
+def run_interview():
+    """Run the interview in a separate thread"""
+    try:
+        initial_state: InterviewState = {
+            "role": "",
+            "questions": [],
+            "answers": [],
+            "requirements": "",
+            "greeting_shown": False,
+            "question_weights": {},
+            "user_score": 0.0,
+            "wrong_questions": [],
+            "total_possible_score": 0.0
+        }
+
+        app = create_interview_graph()
+        result = app.invoke(initial_state)
+
+        # Send completion message
+        st.session_state.bot_output_queue.put("🎉 Interview process completed!")
+        st.session_state.interview_completed = True
+        st.session_state.waiting_for_input = False
+    except Exception as e:
+        st.session_state.bot_output_queue.put(f"❌ Error: {str(e)}")
+        st.session_state.interview_completed = True
+        st.session_state.waiting_for_input = False
 
 
-def print_bot_streamlit(message: str) -> None:
-    st.session_state.history.append(("bot", message))
-    st.markdown(message)
+# Start interview button
+if not st.session_state.interview_started:
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🚀 Start Interview", type="primary", use_container_width=True):
+            st.session_state.interview_started = True
+            st.session_state.interview_completed = False
+            st.session_state.messages = []
+            st.session_state.waiting_for_input = False
 
+            # Start interview in background thread
+            interview_thread = threading.Thread(
+                target=run_interview, daemon=True)
+            interview_thread.start()
+            st.session_state.interview_thread = interview_thread
+            st.rerun()
 
-# Patch interview_bot.py functions
-interview_bot.input_user = input_user_streamlit
-interview_bot.print_bot = print_bot_streamlit
+# Chat interface
+if st.session_state.interview_started:
+    # Check for new bot messages continuously
+    message_received = False
+    try:
+        while True:
+            bot_message = st.session_state.bot_output_queue.get_nowait()
+            st.session_state.messages.append(
+                {"role": "assistant", "content": bot_message})
+            message_received = True
 
+            # Check if this message is asking for input
+            # Look for "Your answer:" prompt specifically
+            if "your answer:" in bot_message.lower() or bot_message.strip().endswith("?"):
+                st.session_state.waiting_for_input = True
+            elif "noted" in bot_message.lower() or "correct" in bot_message.lower() or "incorrect" in bot_message.lower():
+                # After feedback, wait for next question
+                st.session_state.waiting_for_input = False
+    except queue.Empty:
+        pass
 
-def main():
-    st.title("Interview Bot")
-    st.markdown("Welcome to the interactive interview bot. Please answer each question. Scroll below to see your full conversation history.")
+    # Force rerun if we received messages to update UI
+    if message_received:
+        time.sleep(0.1)  # Small delay to batch messages
+        st.rerun()
 
-    # Display history for scrollable chat
-    for speaker, msg in st.session_state.history:
-        if speaker == "bot":
-            st.markdown(
-                f"<div style='background-color:#f0f2f6;padding:8px;border-radius:6px'><b>Bot:</b> {msg}</div>", unsafe_allow_html=True)
-        else:
-            st.markdown(
-                f"<div style='background-color:#e7ffdb;padding:8px;border-radius:6px'><b>You:</b> {msg}</div>", unsafe_allow_html=True)
+    # Display chat messages
+    chat_container = st.container()
+    with chat_container:
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-    interview_state = st.session_state.interview_state
+    # Show processing indicator
+    if not st.session_state.waiting_for_input and not st.session_state.interview_completed:
+        with st.chat_message("assistant"):
+            st.markdown("⏳ *Processing...*")
 
-    if st.session_state.step == 0:
-        # Node 1: generate questions and collect requirements
-        interview_state = node_1_generate_questions(interview_state)
-        st.session_state.step = 1
-        st.experimental_rerun()
+    # User input
+    if st.session_state.waiting_for_input and not st.session_state.interview_completed:
+        user_input = st.chat_input("Type your answer here...")
 
-    elif st.session_state.step == 1:
-        # Node 2: ask each question one by one
-        total_questions = interview_state["questions"][3:]  # Skip initial 3
-        if st.session_state.current_question_index < len(total_questions):
-            # Ask next question
-            question = total_questions[st.session_state.current_question_index]
-            user_answer = input_user_streamlit(question)
-            interview_state["answers"].append(user_answer)
-            # Add score/weight logic if needed (but main evaluation will be after all are answered)
-            st.experimental_rerun()
-        else:
-            # All questions answered, run evaluation
-            interview_state = node_2_evaluate_answers(interview_state)
-            st.session_state.step = 2
-            st.experimental_rerun()
+        if user_input:
+            # Add user message to chat
+            st.session_state.messages.append(
+                {"role": "user", "content": user_input})
 
-    elif st.session_state.step == 2:
-        # Node 3: feedback
-        interview_state = node_3_provide_feedback(interview_state)
-        st.markdown("🏁 Interview process completed!")
-        st.session_state.step = 3
+            # Send to bot
+            st.session_state.user_input_queue.put(user_input)
+            st.session_state.waiting_for_input = False
 
-    # Scrollable UI
-    st.markdown("""
-        <style>
-        .stMarkdown {overflow-y: auto; max-height: 60vh;}
-        </style>
-        """, unsafe_allow_html=True)
+            st.rerun()
+    elif st.session_state.interview_completed:
+        st.chat_input("Interview completed!", disabled=True)
+    else:
+        # Show placeholder when not waiting for input
+        st.chat_input("Waiting for next question...", disabled=True)
 
+    # Auto-refresh to check for new messages
+    if not st.session_state.interview_completed:
+        time.sleep(0.5)
+        st.rerun()
 
-if __name__ == "__main__":
-    main()
+    # Restart button
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🔄 Restart Interview", use_container_width=True):
+            st.session_state.interview_started = False
+            st.session_state.interview_completed = False
+            st.session_state.messages = []
+            st.session_state.waiting_for_input = False
+            st.session_state.user_input_queue = queue.Queue()
+            st.session_state.bot_output_queue = queue.Queue()
+            st.rerun()
+else:
+    # Welcome message
+    st.info(
+        "👋 Welcome! Click 'Start Interview' to begin your AI-powered interview session.")
+
+    with st.expander("ℹ️ How it works"):
+        st.markdown("""
+        1. **Start the Interview**: Click the button above
+        2. **Answer Questions**: The bot will ask you various questions
+        3. **Get Feedback**: Receive personalized feedback based on your performance
+        
+        **Tips:**
+        - Be honest and thoughtful in your answers
+        - Take your time to think before responding
+        - If you don't know an answer, it's okay to say so
+        
+        **Interview Structure:**
+        - 3 initial questions (name, position, requirements)
+        - 5 basic background questions
+        - 23 position-specific technical questions
+        - 2 personal questions
+        """)
+
+    st.markdown("---")
+    st.markdown(
+        "**Note:** Make sure you have your `.env` file configured with `GEMINI_API_KEY`")
