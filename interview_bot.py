@@ -47,7 +47,7 @@ def initialize_queues():
         pass
 
 
-def input_user(prompt: str) -> str:
+def input_user() -> str:
     """
     Receives user response from the UI via Streamlit app.
     In CLI mode, falls back to standard input.
@@ -56,8 +56,6 @@ def input_user(prompt: str) -> str:
 
     # Check if running in Streamlit mode
     if bot_output_queue is not None and user_input_queue is not None:
-        # Send prompt to UI
-        bot_output_queue.put(prompt)
 
         # Wait for user input from UI with proper timeout
         while True:
@@ -69,7 +67,7 @@ def input_user(prompt: str) -> str:
                 continue
     else:
         # Fallback to CLI mode
-        return input(prompt)
+        return input()
 
 
 def print_bot(message: str) -> None:
@@ -128,7 +126,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     answers = []
     for question in starting_questions:
         print_bot(f"\n{question}")
-        answer = input_user("Your answer: ")
+        answer = input_user()
         answers.append(answer)
 
     state["questions"] = starting_questions
@@ -224,8 +222,6 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
                 state["question_weights"][question_part] = {
                     "type": "position-related", "weight": weight}
                 total_weight += weight
-                print_bot(
-                    f"Added Q{len(position_questions)}: {question_part[:50]}... (Weight: {weight})")
 
         i += 1
 
@@ -249,8 +245,8 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     all_questions = basic_questions + position_questions + personal_questions
     state["questions"].extend(all_questions)
 
-    print_bot(
-        f"✓ Basic: {len(basic_questions)}, Position-related: {len(position_questions)}, Personal: {len(personal_questions)}")
+    # print_bot(
+    #     f"✓ Basic: {len(basic_questions)}, Position-related: {len(position_questions)}, Personal: {len(personal_questions)}")
 
     return state
 
@@ -275,15 +271,13 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         if "score" not in state["question_weights"].get(question, {}):
             state["question_weights"][question]["score"] = 0
 
-    print_bot("Starting interview evaluation...\n")
-
     # ask one by one
     dontknow_pattern = re.compile(
         r"\b(?:don'?t\s?know|dont\s?know|dontknow|idk)\b", re.IGNORECASE)
 
     for question in questions:
         print_bot(f"\n{question}")
-        user_answer = input_user("Your answer: ")
+        user_answer = input_user()
 
         q_type = state["question_weights"].get(
             question, {}).get("type", "unknown")
@@ -381,7 +375,6 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
     state["wrong_questions"] = wrong_questions
 
     print_bot(f"\nEvaluation complete. Total score: {user_score}")
-    print_bot(f"Questions couldn't answer: {len(wrong_questions)}")
 
     return state
 
@@ -425,13 +418,12 @@ def node_3_provide_feedback(state: InterviewState) -> InterviewState:
         llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite",
                                      api_key=os.getenv("GEMINI_API_KEY"))
 
-        feedback_prompt = f"""Generate study feedback for someone who couldn't answer these {requirements} questions:
+        feedback_prompt = f"""Generate a short study feedback for someone who couldn't answer these {requirements} questions:
 
 {chr(10).join(f"- {q}" for q in wrong_questions)}
 
 Provide study tips."""
 
-        print_bot("Generating feedback...")
         feedback_response = safe_llm_invoke(llm, feedback_prompt)
 
         if feedback_response:
