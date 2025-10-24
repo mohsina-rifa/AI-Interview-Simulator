@@ -33,11 +33,17 @@ bot_output_queue = None
 def initialize_queues():
     """Initialize the queues from session state if running in Streamlit"""
     global user_input_queue, bot_output_queue
+    # If queues are already set (by the main thread), don't touch streamlit state.
+    if user_input_queue is not None and bot_output_queue is not None:
+        return
+
+    # Otherwise, attempt to initialize from Streamlit session state.
     try:
         if hasattr(st, 'session_state'):
             user_input_queue = st.session_state.get('user_input_queue')
             bot_output_queue = st.session_state.get('bot_output_queue')
-    except:
+    except Exception:
+        # In background threads accessing st.session_state can raise; just skip.
         pass
 
 

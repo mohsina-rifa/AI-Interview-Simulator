@@ -2,6 +2,7 @@ import streamlit as st
 import threading
 import queue
 import time
+import interview_bot
 from interview_bot import create_interview_graph, InterviewState
 
 # Initialize session state
@@ -67,14 +68,25 @@ def run_interview():
         app = create_interview_graph()
         result = app.invoke(initial_state)
 
-        # Send completion message
-        st.session_state.bot_output_queue.put("🎉 Interview process completed!")
-        st.session_state.interview_completed = True
-        st.session_state.waiting_for_input = False
+        # Send completion message via the module-level queue (set by main thread)
+        try:
+            if interview_bot.bot_output_queue is not None:
+                interview_bot.bot_output_queue.put(
+                    "🎉 Interview process completed!")
+            else:
+                # fallback to printing if queue not available
+                print("🎉 Interview process completed!")
+        except Exception:
+            # ensure background thread doesn't touch Streamlit session_state directly
+            print("🎉 Interview process completed! (couldn't put into queue)")
     except Exception as e:
-        st.session_state.bot_output_queue.put(f"❌ Error: {str(e)}")
-        st.session_state.interview_completed = True
-        st.session_state.waiting_for_input = False
+        try:
+            if interview_bot.bot_output_queue is not None:
+                interview_bot.bot_output_queue.put(f"❌ Error: {str(e)}")
+            else:
+                print(f"❌ Error: {str(e)}")
+        except Exception:
+            print(f"❌ Error: {str(e)}")
 
 
 # Start interview button
@@ -86,6 +98,10 @@ if not st.session_state.interview_started:
             st.session_state.interview_completed = False
             st.session_state.messages = []
             st.session_state.waiting_for_input = False
+
+            # Ensure interview_bot module-level queues point to the Streamlit queues
+            interview_bot.user_input_queue = st.session_state.user_input_queue
+            interview_bot.bot_output_queue = st.session_state.bot_output_queue
 
             # Start interview in background thread
             interview_thread = threading.Thread(
@@ -104,6 +120,11 @@ if st.session_state.interview_started:
             st.session_state.messages.append(
                 {"role": "assistant", "content": bot_message})
             message_received = True
+
+            # If worker sent the completion message, mark interview completed
+            if "interview process completed" in bot_message.lower() or "🎉 interview process completed" in bot_message:
+                st.session_state.interview_completed = True
+                st.session_state.waiting_for_input = False
 
             # Check if this message is asking for input
             # Look for "Your answer:" prompt specifically
