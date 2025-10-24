@@ -27,22 +27,17 @@ class InterviewState(TypedDict):
 # Input-output helper
 def input_user(prompt: str) -> str:
     """
-    Receives user response from the UI via Django app.
-    For now, this is a placeholder for integration.
-    Replace this with logic to fetch user input from Django when integrating.
+    Receives user response from the Django Channels consumer.
+    This function should be monkey-patched by the consumer to interact via WebSocket.
     """
-    # TODO: Integrate with Django app to receive user input from UI
-    return input(prompt)
-
+    raise NotImplementedError("input_user should be provided by the Django Channels consumer.")
 
 def print_bot(message: str) -> None:
     """
-    Sends bot response to the UI via Django app.
-    For now, this wraps the built-in print().
-    Replace this with Django integration later.
+    Sends bot response to the Django Channels consumer.
+    This function should be monkey-patched by the consumer to interact via WebSocket.
     """
-    # TODO: Integrate with Django app to send bot messages to UI
-    print(message)
+    raise NotImplementedError("print_bot should be provided by the Django Channels consumer.")
 
 
 
