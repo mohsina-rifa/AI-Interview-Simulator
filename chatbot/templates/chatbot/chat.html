@@ -1,0 +1,32 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>InterviewBot Chat</title>
+    <link rel="stylesheet" href="{% static 'chatbot/style.css' %}" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  </head>
+  <body>
+    <div class="chat-layout">
+      <div class="chat-blank"></div>
+      <div class="chat-center">
+        <div class="chat-header">
+          <h2>InterviewBot</h2>
+        </div>
+        <div id="chat-messages" class="chat-messages"></div>
+        <form id="chat-form" class="chat-input-area" autocomplete="off">
+          <input
+            type="text"
+            id="chat-input"
+            placeholder="Type your answer..."
+            required
+          />
+          <button type="submit" id="send-btn">&#9658;</button>
+        </form>
+      </div>
+      <div class="chat-blank"></div>
+    </div>
+    <script src="{% static 'chatbot/chat.js' %}"></script>
+  </body>
+</html>
