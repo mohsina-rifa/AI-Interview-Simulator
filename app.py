@@ -1,11 +1,40 @@
 import streamlit as st
-from interview_bot import create_interview_graph, InterviewState
+import interview_bot
+
+# --- Streamlit-based IO overrides ---
+
+
+def input_user(prompt: str) -> str:
+    # Display prompt & get answer using Streamlit form
+    st.session_state.prompt = prompt
+    input_key = f"input_{st.session_state.step}"
+    st.text_area(prompt, key=input_key)
+    submitted = st.button("Submit", key=f"submit_{st.session_state.step}")
+    if submitted and st.session_state[input_key]:
+        return st.session_state[input_key]
+    else:
+        st.stop()  # Wait until user submits
+
+
+def output_user(message: str):
+    # Display message using Streamlit
+    st.write(message)
+
+
+# Override interview_bot IO globally
+interview_bot.input_user = input_user
+interview_bot.output_user = output_user
 
 st.title("AI Interview Simulator Chatbot")
 
-if "state" not in st.session_state:
-    # Initialize interview state
-    st.session_state.state = {
+# Session state initialization
+if "step" not in st.session_state:
+    st.session_state.step = 0
+if "interview_complete" not in st.session_state:
+    st.session_state.interview_complete = False
+if "initial_state" not in st.session_state:
+    # Setup initial interview state
+    st.session_state.initial_state = {
         "role": "",
         "questions": [],
         "answers": [],
@@ -16,53 +45,27 @@ if "state" not in st.session_state:
         "wrong_questions": [],
         "total_possible_score": 0.0
     }
-    st.session_state.interview_started = False
-    st.session_state.current_question_index = 0
-    st.session_state.questions_to_ask = []
-    st.session_state.graph = create_interview_graph()
 
-
-def next_question():
-    idx = st.session_state.current_question_index
-    if idx < len(st.session_state.questions_to_ask):
-        return st.session_state.questions_to_ask[idx]
-    return None
-
-
-def run_interview():
-    # Step 1: Generate questions
-    state = st.session_state.state
-    state = st.session_state.graph.invoke(state)
-    st.session_state.questions_to_ask = state["questions"]
-    st.session_state.state = state
-    st.session_state.interview_started = True
-
-
-if not st.session_state.interview_started:
-    st.write("Welcome! Click below to start your interview.")
-    if st.button("Start Interview"):
-        run_interview()
-        st.experimental_rerun()
-else:
-    question = next_question()
-    if question:
-        st.write(
-            f"**Question {st.session_state.current_question_index + 1}:** {question}")
-        user_answer = st.text_input(
-            "Your answer:", key=f"answer_{st.session_state.current_question_index}")
-        if st.button("Submit Answer", key=f"submit_{st.session_state.current_question_index}"):
-            st.session_state.state["answers"].append(user_answer)
-            st.session_state.current_question_index += 1
+if not st.session_state.interview_complete:
+    if st.session_state.step == 0:
+        st.write("Welcome! Click below to start your interview.")
+        if st.button("Start Interview"):
+            # Create and run the LangGraph workflow
+            graph = interview_bot.create_interview_graph()
+            result = graph.invoke(st.session_state.initial_state)
+            st.session_state.result = result
+            st.session_state.interview_complete = True
             st.experimental_rerun()
+else:
+    # Interview is complete, display feedback
+    result = st.session_state.result
+    st.write("### Interview Complete!")
+    st.write(
+        f"**Score:** {result['user_score']} / {result['total_possible_score']}")
+    if result.get("wrong_questions"):
+        st.write("**Areas for improvement:**")
+        for q in result["wrong_questions"]:
+            st.write(f"- {q}")
     else:
-        st.write("Interview completed! Generating feedback...")
-        # Run feedback node
-        state = st.session_state.state
-        feedback_state = st.session_state.graph.invoke(state)
-        st.write("**Feedback:**")
-        st.write(
-            f"Score: {feedback_state['user_score']}/{feedback_state['total_possible_score']}")
-        if feedback_state.get("wrong_questions"):
-            st.write("Areas for improvement:")
-            for q in feedback_state["wrong_questions"]:
-                st.write(f"- {q}")
+        st.write("Great job! No improvement areas found.")
+    st.write("Thank you for taking the interview!")
