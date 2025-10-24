@@ -1,63 +1,65 @@
 import streamlit as st
-import interview_bot
-
-# --- Streamlit-based IO overrides ---
-
-
-def input_user(prompt: str) -> str:
-    # Display prompt & get answer using Streamlit form
-    st.session_state.prompt = prompt
-    input_key = f"input_{st.session_state.step}"
-    st.text_area(prompt, key=input_key)
-    submitted = st.button("Submit", key=f"submit_{st.session_state.step}")
-    if submitted and st.session_state[input_key]:
-        return st.session_state[input_key]
-    else:
-        st.stop()  # Wait until user submits
-
-
-def output_user(message: str):
-    # Display message using Streamlit
-    st.write(message)
-
-
-# Override interview_bot IO globally
-interview_bot.input_user = input_user
-interview_bot.output_user = output_user
+from interview_bot import create_interview_graph
 
 st.title("AI Interview Simulator Chatbot")
 
-# Session state initialization
-if "step" not in st.session_state:
-    st.session_state.step = 0
+# Interview questions (basic ones for demo, you can fetch/generate these dynamically)
+STARTING_QUESTIONS = [
+    "What is your name?",
+    "What position have you applied for?",
+    "What were the requirements for that?"
+]
+
+# Set up session state for tracking progress
+if "current_q" not in st.session_state:
+    st.session_state.current_q = 0
+if "answers" not in st.session_state:
+    st.session_state.answers = []
 if "interview_complete" not in st.session_state:
     st.session_state.interview_complete = False
-if "initial_state" not in st.session_state:
-    # Setup initial interview state
-    st.session_state.initial_state = {
-        "role": "",
-        "questions": [],
-        "answers": [],
-        "requirements": "",
-        "greeting_shown": False,
-        "question_weights": {},
-        "user_score": 0.0,
-        "wrong_questions": [],
-        "total_possible_score": 0.0
-    }
+if "result" not in st.session_state:
+    st.session_state.result = None
 
+# Logic for the interview process
 if not st.session_state.interview_complete:
-    if st.session_state.step == 0:
-        st.write("Welcome! Click below to start your interview.")
-        if st.button("Start Interview"):
-            # Create and run the LangGraph workflow
-            graph = interview_bot.create_interview_graph()
-            result = graph.invoke(st.session_state.initial_state)
-            st.session_state.result = result
-            st.session_state.interview_complete = True
-            st.experimental_rerun()
+    # If there are questions left
+    if st.session_state.current_q < len(STARTING_QUESTIONS):
+        question = STARTING_QUESTIONS[st.session_state.current_q]
+        st.write(f"**Question {st.session_state.current_q + 1}:** {question}")
+        answer = st.text_input(
+            "Your answer:", key=f"answer_{st.session_state.current_q}")
+
+        if st.button("Submit", key=f"submit_{st.session_state.current_q}"):
+            if answer.strip():
+                st.session_state.answers.append(answer)
+                st.session_state.current_q += 1
+                st.experimental_rerun()
+            else:
+                st.warning("Please enter an answer before submitting.")
+    else:
+        # All answers collected, run the interview workflow
+        st.write("Interview questions completed. Processing results...")
+
+        # Build initial state for the interview bot
+        initial_state = {
+            "role": "",
+            "questions": STARTING_QUESTIONS,
+            "answers": st.session_state.answers,
+            "requirements": st.session_state.answers[2] if len(st.session_state.answers) > 2 else "",
+            "greeting_shown": True,
+            "question_weights": {},
+            "user_score": 0.0,
+            "wrong_questions": [],
+            "total_possible_score": 0.0
+        }
+
+        graph = create_interview_graph()
+        result = graph.invoke(initial_state)
+        st.session_state.result = result
+        st.session_state.interview_complete = True
+        st.experimental_rerun()
 else:
-    # Interview is complete, display feedback
+    # Interview complete, show results
     result = st.session_state.result
     st.write("### Interview Complete!")
     st.write(
@@ -69,3 +71,9 @@ else:
     else:
         st.write("Great job! No improvement areas found.")
     st.write("Thank you for taking the interview!")
+    if st.button("Restart Interview"):
+        # Reset session state for restart
+        for key in ["current_q", "answers", "interview_complete", "result"]:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.experimental_rerun()
