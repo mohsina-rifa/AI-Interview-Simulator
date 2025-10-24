@@ -115,7 +115,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
 
     # parse
     questions_text = response.content.strip()
-    print(f"Debug - LLM Response:\n{questions_text[:300]}...")
+    # print(f"Debug - LLM Response:\n{questions_text[:300]}...")
     lines = questions_text.split("\n")
 
     position_questions = []
@@ -158,8 +158,6 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
                 state["question_weights"][question_part] = {
                     "type": "position-related", "weight": weight}
                 total_weight += weight
-                print(
-                    f"Added Q{len(position_questions)}: {question_part[:50]}... (Weight: {weight})")
 
         i += 1
 
@@ -240,7 +238,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
             continue
 
         # position-related questions : evaluate using LLM
-        eval_prompt = f"""Evaluate this {state['requirements']} interview answer:
+        eval_prompt = f"""You are a VERY STRICT evaluator. Evaluate this {state['requirements']} interview answer:
 
         Question: {question}
         User Answer: {user_answer}
@@ -279,7 +277,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
                 state["question_weights"][question]["score"] = -3
             else:
                 # Evaluate second attempt
-                retry_prompt = f"""Evaluate this {state['requirements']} retry answer:
+                retry_prompt = f"""You are a VERY STRICT evaluator. Evaluate this {state['requirements']} retry answer:
                 
                 Question: {question}
                 User Answer: {retry_answer}
