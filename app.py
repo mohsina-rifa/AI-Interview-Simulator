@@ -148,10 +148,7 @@ if st.session_state.interview_started:
             with st.chat_message(message["role"]):
                 st.markdown(message["content"])
 
-    # Show processing indicator
-    if not st.session_state.waiting_for_input and not st.session_state.interview_completed:
-        with st.chat_message("assistant"):
-            st.markdown("⏳ *Processing...*")
+    # (Processing indicator removed — background updates are shown via messages)
 
     # User input
     if st.session_state.waiting_for_input and not st.session_state.interview_completed:
