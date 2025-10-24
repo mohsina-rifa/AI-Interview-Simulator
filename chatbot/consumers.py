@@ -1,12 +1,13 @@
 from channels.generic.websocket import AsyncWebsocketConsumer
 import json
-from .models import InterviewSession
 import uuid
 import interview_bot
+import asyncio
 
 
 class InterviewBotConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+        from .models import InterviewSession  # Import here
         await self.accept()
         self.session_id = str(uuid.uuid4())
         self.state = {
@@ -26,63 +27,47 @@ class InterviewBotConsumer(AsyncWebsocketConsumer):
             current_state=self.state
         )
         await self.send(text_data=json.dumps({"message": "Interview started!", "session_id": self.session_id}))
-        # Start the interview process by generating questions
-        await self.run_interview_step("generate_questions")
+        await self.start_interview_flow()
 
     async def receive(self, text_data):
+        from .models import InterviewSession  # Import here
         data = json.loads(text_data)
-        action = data.get("action")
         answer = data.get("answer")
+        # Resume interview flow with user's answer
+        if hasattr(self, "_pending_input") and self._pending_input:
+            self._pending_input.set_result(answer)
 
-        session = InterviewSession.objects.get(session_id=self.session_id)
-        self.state = session.current_state
-
-        # Store user answer if provided
-        if action == "submit_answer" and answer is not None:
-            self.state.setdefault("answers", []).append(answer)
-            session.current_state = self.state
-            session.save()
-            await self.send(text_data=json.dumps({"message": "Answer received."}))
-            await self.run_interview_step("evaluate_answers")
-        else:
-            await self.send(text_data=json.dumps({"error": "Invalid action or missing answer."}))
-
-    async def run_interview_step(self, step):
+    async def start_interview_flow(self):
         # Monkey-patch input_user and print_bot for async WebSocket communication
-        def input_user(prompt):
-            # Send question to frontend and wait for answer
-            import asyncio
-            future = asyncio.get_event_loop().create_future()
-            self._pending_input = future
-            self._pending_prompt = prompt
-            self.send_sync({"question": prompt})
-            return future
+        async def input_user(prompt):
+            await self.send(text_data=json.dumps({"question": prompt}))
+            self._pending_input = asyncio.get_event_loop().create_future()
+            answer = await self._pending_input
+            return answer
 
-        def print_bot(message):
-            self.send_sync({"message": message})
+        async def print_bot(message):
+            await self.send(text_data=json.dumps({"message": message}))
 
-        # Patch interview_bot functions
         interview_bot.input_user = input_user
         interview_bot.print_bot = print_bot
 
-        # Run the appropriate node
-        if step == "generate_questions":
-            new_state = interview_bot.node_1_generate_questions(self.state)
-        elif step == "evaluate_answers":
-            new_state = interview_bot.node_2_evaluate_answers(self.state)
-            # After evaluation, provide feedback
-            new_state = interview_bot.node_3_provide_feedback(new_state)
-        else:
-            new_state = self.state
+        # Run interview nodes step by step
+        # 1. Generate questions
+        self.state = await interview_bot.node_1_generate_questions(self.state)
+        self.save_state()
 
-        # Save updated state
+        # 2. Evaluate answers
+        self.state = await interview_bot.node_2_evaluate_answers(self.state)
+        self.save_state()
+
+        # 3. Provide feedback
+        self.state = await interview_bot.node_3_provide_feedback(self.state)
+        self.save_state()
+
+        await self.send(text_data=json.dumps({"message": "Interview complete."}))
+
+    def save_state(self):
+        from .models import InterviewSession  # Import here
         session = InterviewSession.objects.get(session_id=self.session_id)
-        session.current_state = new_state
+        session.current_state = self.state
         session.save()
-        self.state = new_state
-
-    def send_sync(self, data):
-        # Helper to send data from sync context
-        import asyncio
-        loop = asyncio.get_event_loop()
-        loop.create_task(self.send(text_data=json.dumps(data)))
