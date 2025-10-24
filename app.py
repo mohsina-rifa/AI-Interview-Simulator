@@ -33,7 +33,7 @@ if not st.session_state.interview_complete:
             if answer.strip():
                 st.session_state.answers.append(answer)
                 st.session_state.current_q += 1
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.warning("Please enter an answer before submitting.")
     else:
@@ -57,7 +57,7 @@ if not st.session_state.interview_complete:
         result = graph.invoke(initial_state)
         st.session_state.result = result
         st.session_state.interview_complete = True
-        st.experimental_rerun()
+        st.rerun()
 else:
     # Interview complete, show results
     result = st.session_state.result
@@ -76,4 +76,4 @@ else:
         for key in ["current_q", "answers", "interview_complete", "result"]:
             if key in st.session_state:
                 del st.session_state[key]
-        st.experimental_rerun()
+        st.rerun()
