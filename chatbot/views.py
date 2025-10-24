@@ -7,6 +7,9 @@ import uuid
 import json
 
 # Create your views here.
+def chat_interface(request):
+    # Renders the chat UI template
+    return render(request, "chatbot/chat.html")
 
 
 @csrf_exempt
