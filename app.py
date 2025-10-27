@@ -20,6 +20,8 @@ if 'interview_thread' not in st.session_state:
     st.session_state.interview_thread = None
 if 'interview_completed' not in st.session_state:
     st.session_state.interview_completed = False
+if 'show_welcome' not in st.session_state:
+    st.session_state.show_welcome = True
 
 # Page config
 st.set_page_config(page_title="AI Interview Bot", page_icon="🤖", layout="wide")
@@ -98,6 +100,7 @@ if not st.session_state.interview_started:
             st.session_state.interview_completed = False
             st.session_state.messages = []
             st.session_state.waiting_for_input = False
+            st.session_state.show_welcome = False
 
             # Ensure interview_bot module-level queues point to the Streamlit queues
             interview_bot.user_input_queue = st.session_state.user_input_queue
@@ -117,8 +120,15 @@ if st.session_state.interview_started:
     try:
         while True:
             bot_message = st.session_state.bot_output_queue.get_nowait()
-            st.session_state.messages.append(
-                {"role": "assistant", "content": bot_message})
+            # Skip rendering any helper/welcome text that might have been emitted
+            lower_msg = bot_message.lower()
+            skip_keywords = ["welcome", "start interview", "how it works"]
+            if any(k in lower_msg for k in skip_keywords):
+                # do not add welcome/how-it-works helper text to chat messages
+                pass
+            else:
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": bot_message})
             message_received = True
 
             # If worker sent the completion message, mark interview completed
@@ -188,28 +198,29 @@ if st.session_state.interview_started:
             st.session_state.bot_output_queue = queue.Queue()
             st.rerun()
 else:
-    # Welcome message
-    st.info(
-        "👋 Welcome! Click 'Start Interview' to begin your AI-powered interview session.")
+    # Welcome message (only show when allowed)
+    if st.session_state.show_welcome:
+        st.info(
+            "👋 Welcome! Click 'Start Interview' to begin your AI-powered interview session.")
 
-    with st.expander("ℹ️ How it works"):
-        st.markdown("""
-        1. **Start the Interview**: Click the button above
-        2. **Answer Questions**: The bot will ask you various questions
-        3. **Get Feedback**: Receive personalized feedback based on your performance
-        
-        **Tips:**
-        - Be honest and thoughtful in your answers
-        - Take your time to think before responding
-        - If you don't know an answer, it's okay to say so
-        
-        **Interview Structure:**
-        - 3 initial questions (name, position, requirements)
-        - 5 basic background questions
-        - 23 position-specific technical questions
-        - 2 personal questions
-        """)
+        with st.expander("ℹ️ How it works"):
+            st.markdown("""
+            1. **Start the Interview**: Click the button above
+            2. **Answer Questions**: The bot will ask you various questions
+            3. **Get Feedback**: Receive personalized feedback based on your performance
+            
+            **Tips:**
+            - Be honest and thoughtful in your answers
+            - Take your time to think before responding
+            - If you don't know an answer, it's okay to say so
+            
+            **Interview Structure:**
+            - 3 initial questions (name, position, requirements)
+            - 5 basic background questions
+            - 23 position-specific technical questions
+            - 2 personal questions
+            """)
 
-    st.markdown("---")
-    st.markdown(
-        "**Note:** Make sure you have your `.env` file configured with `GEMINI_API_KEY`")
+        st.markdown("---")
+        st.markdown(
+            "**Note:** Make sure you have your `.env` file configured with `GEMINI_API_KEY`")
