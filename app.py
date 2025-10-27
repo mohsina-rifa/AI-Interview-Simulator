@@ -266,22 +266,3 @@ else:
             """)
 
         st.markdown("---")
-        st.markdown(
-            "**Note:** Make sure you have your `.env` file configured with `GEMINI_API_KEY`")
-
-# Debug helper (temporary): show state so we can diagnose why the welcome
-# panel might still appear. Remove this block once debugged.
-with st.expander("🐞 Debug (dev)"):
-    bot_queue_empty = True
-    try:
-        bot_queue_empty = st.session_state.bot_output_queue.empty()
-    except Exception:
-        bot_queue_empty = True
-
-    st.write({
-        "flag": st.session_state.get("flag"),
-        "interview_started": st.session_state.get("interview_started"),
-        "messages_count": len(st.session_state.get("messages", [])),
-        "bot_queue_empty": bot_queue_empty,
-        "interview_thread": bool(st.session_state.get("interview_thread")),
-    })
