@@ -20,8 +20,11 @@ if 'interview_thread' not in st.session_state:
     st.session_state.interview_thread = None
 if 'interview_completed' not in st.session_state:
     st.session_state.interview_completed = False
-if 'show_welcome' not in st.session_state:
-    st.session_state.show_welcome = True
+if 'flag' not in st.session_state:
+    # Simple flag to control showing the welcome/info block
+    # (user requested a boolean named `flag` that hides the welcome
+    # section once the interview starts)
+    st.session_state.flag = True
 
 # Page config
 st.set_page_config(page_title="AI Interview Bot", page_icon="🤖", layout="wide")
@@ -91,27 +94,48 @@ def run_interview():
             print(f"❌ Error: {str(e)}")
 
 
-# Start interview button
-if not st.session_state.interview_started:
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        if st.button("🚀 Start Interview", type="primary", use_container_width=True):
-            st.session_state.interview_started = True
-            st.session_state.interview_completed = False
-            st.session_state.messages = []
-            st.session_state.waiting_for_input = False
-            st.session_state.show_welcome = False
+# Start interview button (always rendered; disabled when interview already running)
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    def _start_interview():
+        """Callback to start the interview (used with st.button on_click).
 
-            # Ensure interview_bot module-level queues point to the Streamlit queues
-            interview_bot.user_input_queue = st.session_state.user_input_queue
-            interview_bot.bot_output_queue = st.session_state.bot_output_queue
+        Using an explicit callback avoids missing the button click across
+        reruns and ensures state is set atomically.
+        """
+        st.session_state.interview_started = True
+        st.session_state.interview_completed = False
+        st.session_state.messages = []
+        st.session_state.waiting_for_input = False
+        # hide the welcome/info block
+        st.session_state.flag = False
 
-            # Start interview in background thread
-            interview_thread = threading.Thread(
-                target=run_interview, daemon=True)
-            interview_thread.start()
-            st.session_state.interview_thread = interview_thread
-            st.rerun()
+        # Ensure interview_bot module-level queues point to the Streamlit queues
+        interview_bot.user_input_queue = st.session_state.user_input_queue
+        interview_bot.bot_output_queue = st.session_state.bot_output_queue
+
+        # Start interview in background thread
+        interview_thread = threading.Thread(target=run_interview, daemon=True)
+        interview_thread.start()
+        st.session_state.interview_thread = interview_thread
+
+        # Trigger a rerun so the UI updates immediately
+        try:
+            st.experimental_rerun()
+        except Exception:
+            try:
+                st.rerun()
+            except Exception:
+                pass
+
+    # Always show the Start button, but disable it when interview is running
+    st.button(
+        "🚀 Start Interview",
+        type="primary",
+        use_container_width=True,
+        on_click=_start_interview,
+        disabled=bool(st.session_state.get("interview_started", False)),
+    )
 
 # Chat interface
 if st.session_state.interview_started:
@@ -122,6 +146,10 @@ if st.session_state.interview_started:
             bot_message = st.session_state.bot_output_queue.get_nowait()
             # Skip rendering any helper/welcome text that might have been emitted
             lower_msg = bot_message.lower()
+            # If the bot greeting is emitted, hide the welcome/info block
+            # immediately so the welcome panel cannot appear anymore.
+            if "hello, i am" in lower_msg and "taking your interview" in lower_msg:
+                st.session_state.flag = False
             skip_keywords = ["welcome", "start interview", "how it works"]
             if any(k in lower_msg for k in skip_keywords):
                 # do not add welcome/how-it-works helper text to chat messages
@@ -196,10 +224,25 @@ if st.session_state.interview_started:
             st.session_state.waiting_for_input = False
             st.session_state.user_input_queue = queue.Queue()
             st.session_state.bot_output_queue = queue.Queue()
+            # show the welcome/info block again after restart
+            st.session_state.flag = True
             st.rerun()
 else:
     # Welcome message (only show when allowed)
-    if st.session_state.show_welcome:
+    # Use the explicit `flag` to decide whether to render the welcome/info
+    # block. Additionally only show it when there are no chat messages yet
+    # to avoid the welcome box reappearing while the chat is active.
+    # Additionally ensure the bot output queue is empty so the welcome
+    # panel doesn't briefly reappear while the background interview
+    # thread has already enqueued messages (prevents flicker).
+    bot_queue_empty = True
+    try:
+        bot_queue_empty = st.session_state.bot_output_queue.empty()
+    except Exception:
+        # If the queue isn't available for any reason, treat as empty
+        bot_queue_empty = True
+
+    if st.session_state.flag and not st.session_state.messages and bot_queue_empty:
         st.info(
             "👋 Welcome! Click 'Start Interview' to begin your AI-powered interview session.")
 
@@ -224,3 +267,20 @@ else:
         st.markdown("---")
         st.markdown(
             "**Note:** Make sure you have your `.env` file configured with `GEMINI_API_KEY`")
+
+# Debug helper (temporary): show state so we can diagnose why the welcome
+# panel might still appear. Remove this block once debugged.
+with st.expander("🐞 Debug (dev)"):
+    bot_queue_empty = True
+    try:
+        bot_queue_empty = st.session_state.bot_output_queue.empty()
+    except Exception:
+        bot_queue_empty = True
+
+    st.write({
+        "flag": st.session_state.get("flag"),
+        "interview_started": st.session_state.get("interview_started"),
+        "messages_count": len(st.session_state.get("messages", [])),
+        "bot_queue_empty": bot_queue_empty,
+        "interview_thread": bool(st.session_state.get("interview_thread")),
+    })
