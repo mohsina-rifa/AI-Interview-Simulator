@@ -27,7 +27,7 @@ if 'flag' not in st.session_state:
     st.session_state.flag = True
 
 # Page config
-st.set_page_config(page_title="AI Interview Bot", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="AI Interview Simulator", page_icon="🤖", layout="wide")
 
 # Custom CSS for better chat UI
 st.markdown("""
@@ -43,15 +43,54 @@ st.markdown("""
     div[data-testid="stChatMessageContent"] {
         padding: 1rem;
     }
-    /* Auto-scroll to bottom */
+    /* Sticky header and content spacing */
+    /* Keep room at top so the fixed header doesn't cover content */
     .main .block-container {
+        padding-top: 6.5rem; /* space for the fixed title and top app bar */
         padding-bottom: 5rem;
+    }
+
+    /* Fixed title that remains visible at top of viewport */
+    #sticky-title {
+        position: fixed;
+        /* place below Streamlit top bar (adjust if your top bar height differs) */
+        top: 60px;
+        left: 50%;
+        transform: translateX(-50%);
+        /* very high z-index to ensure visibility above Streamlit UI */
+        z-index: 999999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0.6rem 1rem;
+        font-size: 1.6rem;
+        font-weight: 700;
+        max-width: 1700px;
+        width: calc(100% - 4rem);
+        border-radius: 6px;
+        box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+        color: #111; /* default text color for light themes */
+        /* Use a semi-opaque background to play nice with themes */
+        background: #0e1117;
+        backdrop-filter: blur(4px);
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+        /* Ensure it doesn't block clicks to the page when not needed */
+        pointer-events: auto;
+    }
+
+    /* Slight adjustment for dark mode - fallbacks will apply if theme overrides */
+    @media (prefers-color-scheme: dark) {
+        #sticky-title {
+            background: rgba(18, 18, 18, 0.92);
+            border-bottom: 1px solid rgba(255,255,255,0.04);
+            color: #fff;
+        }
     }
 </style>
 """, unsafe_allow_html=True)
 
-# Title
-st.title("🤖 AI Interview Bot")
+# Title (sticky)
+st.markdown('<div id="sticky-title">🤖 AI Interview Simulator</div>', unsafe_allow_html=True)
 st.markdown("---")
 
 

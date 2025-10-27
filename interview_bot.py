@@ -285,7 +285,6 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 
         # basic and personal questions : just record
         if q_type in ["basic", "personal"]:
-            print_bot("✓ Noted.")
             state["question_weights"][question]["score"] = 0
             state["answers"].append(user_answer)
             continue
