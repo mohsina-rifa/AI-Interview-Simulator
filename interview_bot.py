@@ -6,6 +6,8 @@ from langgraph.graph import StateGraph, END
 import os
 import re
 from dotenv import load_dotenv
+import streamlit as st
+import queue
 
 
 load_dotenv()
@@ -23,7 +25,69 @@ class InterviewState(TypedDict):
     total_possible_score: float
 
 
+# Input-output helper
+user_input_queue = None
+bot_output_queue = None
+
+
+def initialize_queues():
+    """Initialize the queues from session state if running in Streamlit"""
+    global user_input_queue, bot_output_queue
+    # If queues are already set (by the main thread), don't touch streamlit state.
+    if user_input_queue is not None and bot_output_queue is not None:
+        return
+
+    # Otherwise, attempt to initialize from Streamlit session state.
+    try:
+        if hasattr(st, 'session_state'):
+            user_input_queue = st.session_state.get('user_input_queue')
+            bot_output_queue = st.session_state.get('bot_output_queue')
+    except Exception:
+        # In background threads accessing st.session_state can raise; just skip.
+        pass
+
+
+def input_user() -> str:
+    """
+    Receives user response from the UI via Streamlit app.
+    In CLI mode, falls back to standard input.
+    """
+    initialize_queues()
+
+    # Check if running in Streamlit mode
+    if bot_output_queue is not None and user_input_queue is not None:
+
+        # Wait for user input from UI with proper timeout
+        while True:
+            try:
+                user_response = user_input_queue.get(
+                    timeout=1.0)  # ✅ Changed to 1.0
+                return user_response
+            except queue.Empty:
+                continue
+    else:
+        # Fallback to CLI mode
+        return input()
+
+
+def print_bot(message: str) -> None:
+    """
+    Sends bot response to the UI via Streamlit app.
+    In CLI mode, falls back to standard print.
+    """
+    initialize_queues()
+
+    # Check if running in Streamlit mode
+    if bot_output_queue is not None:
+        bot_output_queue.put(message)
+        # ✅ Increased delay and removed duplicate import
+        time.sleep(0.2)
+    else:
+        # Fallback to CLI mode
+        print(message)
+
 # node implementation
+
 
 def safe_llm_invoke(llm, prompt, max_retries=3):
     """Safely invoke LLM with retry logic"""
@@ -34,7 +98,7 @@ def safe_llm_invoke(llm, prompt, max_retries=3):
         except Exception as e:
             if "rate_limit" in str(e).lower() and attempt < max_retries - 1:
                 wait_time = 2 ** attempt
-                print(f"Rate limit hit. Waiting {wait_time} seconds...")
+                print_bot(f"Rate limit hit. Waiting {wait_time} seconds...")
                 time.sleep(wait_time)
                 continue
             else:
@@ -48,7 +112,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
 
     # greeting user
     if not state.get("greeting_shown", False):
-        print("Hello, I am Anishom and I will be taking your interview today.")
+        print_bot("Hello, I am Anishom and I will be taking your interview today.")
         state["greeting_shown"] = True
 
     # starting-questions
@@ -61,8 +125,8 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     # get answers
     answers = []
     for question in starting_questions:
-        print(f"\n{question}")
-        answer = input("Your answer: ")
+        print_bot(f"\n{question}")
+        answer = input_user()
         answers.append(answer)
 
     state["questions"] = starting_questions
@@ -106,11 +170,11 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
 
     Generate exactly 23 questions following this format. Each question should test {state['requirements']} knowledge. Use weights 1-10 based on difficulty."""
 
-    print("Generating questions...")
+    print_bot("Generating questions...")
     response = safe_llm_invoke(llm, questions_prompt)
 
     if response is None:
-        print("Failed to generate questions.")
+        print_bot("Failed to generate questions.")
         return state
 
     # parse
@@ -163,7 +227,7 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
 
     # didn't get enough questions from LLM
     if len(position_questions) < 5:
-        print(
+        print_bot(
             f"Warning: Only generated {len(position_questions)} questions. Continuing with what we have...")
 
     state["total_possible_score"] = total_weight
@@ -181,7 +245,8 @@ def node_1_generate_questions(state: InterviewState) -> InterviewState:
     all_questions = basic_questions + position_questions + personal_questions
     state["questions"].extend(all_questions)
 
-    print(f"✓ Basic: {len(basic_questions)}, Position-related: {len(position_questions)}, Personal: {len(personal_questions)}")
+    # print_bot(
+    #     f"✓ Basic: {len(basic_questions)}, Position-related: {len(position_questions)}, Personal: {len(personal_questions)}")
 
     return state
 
@@ -206,15 +271,13 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         if "score" not in state["question_weights"].get(question, {}):
             state["question_weights"][question]["score"] = 0
 
-    print("Starting interview evaluation...\n")
-
     # ask one by one
     dontknow_pattern = re.compile(
         r"\b(?:don'?t\s?know|dont\s?know|dontknow|idk)\b", re.IGNORECASE)
 
     for question in questions:
-        print(f"\n{question}")
-        user_answer = input("Your answer: ")
+        print_bot(f"\n{question}")
+        user_answer = input_user()
 
         q_type = state["question_weights"].get(
             question, {}).get("type", "unknown")
@@ -222,7 +285,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 
         # basic and personal questions : just record
         if q_type in ["basic", "personal"]:
-            print("✓ Noted.")
+            print_bot("✓ Noted.")
             state["question_weights"][question]["score"] = 0
             state["answers"].append(user_answer)
             continue
@@ -230,7 +293,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
         # quick-skip if user explicitly says they don't know
         if dontknow_pattern.search(user_answer):
             # pass = score -= 2, save the question
-            print("✗ Moving to next question.")
+            print_bot("✗ Moving to next question.")
             user_score -= 2
             state["question_weights"][question]["score"] = -2
             wrong_questions.append(question)
@@ -248,7 +311,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 
         eval_response = safe_llm_invoke(llm, eval_prompt)
         if eval_response is None:
-            print("✗ Evaluation failed. Skipping.")
+            print_bot("✗ Evaluation failed. Skipping.")
             wrong_questions.append(question)
             continue
 
@@ -256,23 +319,23 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 
         if is_correct:
             # correct = score += weight
-            print("✓ Correct! Well done.")
+            print_bot("✓ Correct! Well done.")
             user_score += weight
             state["question_weights"][question]["score"] = weight
         else:
             # incorrect = score -= 1
-            print("✗ Incorrect.")
+            print_bot("✗ Incorrect.")
             user_score -= 1
             state["question_weights"][question]["score"] = -1
             wrong_questions.append(question)
 
             # second chance
-            print("Please try again:")
-            retry_answer = input("Your answer: ")
+            print_bot("Please try again:")
+            retry_answer = input_user("Your answer: ")
 
             if dontknow_pattern.search(retry_answer):
                 # pass = score -= 3, save the question
-                print("✗ Passed on second chance.")
+                print_bot("✗ Passed on second chance.")
                 user_score -= 3
                 state["question_weights"][question]["score"] = -3
             else:
@@ -287,21 +350,21 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
 
                 retry_response = safe_llm_invoke(llm, retry_prompt)
                 if retry_response is None:
-                    print("✗ Evaluation failed.")
+                    print_bot("✗ Evaluation failed.")
                     continue
 
                 is_retry_correct = "CORRECT" in retry_response.content.upper()
 
                 if is_retry_correct:
                     # correct = score += weight/2
-                    print("✓ Correct! Good effort.")
+                    print_bot("✓ Correct! Good effort.")
                     user_score += (weight / 2)
                     state["question_weights"][question]["score"] = weight / 2
                     # Remove since retry was correct
                     wrong_questions.remove(question)
                 else:
                     # incorrect = score -= 2
-                    print("✗ Incorrect again.")
+                    print_bot("✗ Incorrect again.")
                     user_score -= 2
                     state["question_weights"][question]["score"] = -2
 
@@ -311,8 +374,7 @@ def node_2_evaluate_answers(state: InterviewState) -> InterviewState:
     state["user_score"] = user_score
     state["wrong_questions"] = wrong_questions
 
-    print(f"\nEvaluation complete. Total score: {user_score}")
-    print(f"Questions couldn't answer: {len(wrong_questions)}")
+    print_bot(f"\nEvaluation complete. Total score: {user_score}")
 
     return state
 
@@ -326,28 +388,29 @@ def node_3_provide_feedback(state: InterviewState) -> InterviewState:
     requirements = state.get("requirements", "")
     total_possible_score = state.get("total_possible_score", 0)
 
-    print("\n" + "="*50)
-    print("           INTERVIEW FEEDBACK")
-    print("="*50)
+    print_bot("\n" + "="*50)
+    print_bot("           INTERVIEW FEEDBACK")
+    print_bot("="*50)
 
     # congratulate if score >= 80%
     if total_possible_score > 0:
         percentage = (user_score / total_possible_score) * 100
-        print(
+        print_bot(
             f"Your Score: {user_score:.1f}/{total_possible_score} ({percentage:.1f}%)")
 
         if percentage >= 80:
-            print("\n🎉 CONGRATULATIONS! 🎉")
-            print("We look forward to working with you!")
+            print_bot("\n🎉 CONGRATULATIONS! 🎉")
+            print_bot("We look forward to working with you!")
         else:
-            print("\n📚 You need some improvement")
+            print_bot("\n📚 You need some improvement")
     else:
-        print("No scored questions available for evaluation.")
+        print_bot("No scored questions available for evaluation.")
 
     # not enough score: generate feedback with questions of wrong answers
     if wrong_questions:
-        print(f"\nAreas for Improvement ({len(wrong_questions)} questions):")
-        print("-" * 40)
+        print_bot(
+            f"\nAreas for Improvement ({len(wrong_questions)} questions):")
+        print_bot("-" * 40)
 
         # llm = ChatGroq(model="llama-3.1-8b-instant",
         #                api_key=os.getenv("GROQ_API_KEY"))
@@ -355,25 +418,24 @@ def node_3_provide_feedback(state: InterviewState) -> InterviewState:
         llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash-lite",
                                      api_key=os.getenv("GEMINI_API_KEY"))
 
-        feedback_prompt = f"""Generate study feedback for someone who couldn't answer these {requirements} questions:
+        feedback_prompt = f"""Generate a short study feedback for someone who couldn't answer these {requirements} questions:
 
 {chr(10).join(f"- {q}" for q in wrong_questions)}
 
 Provide study tips."""
 
-        print("Generating feedback...")
         feedback_response = safe_llm_invoke(llm, feedback_prompt)
 
         if feedback_response:
-            print("\n" + feedback_response.content)
+            print_bot("\n" + feedback_response.content)
         else:
-            print("\nReview these topics:")
+            print_bot("\nReview these topics:")
             for i, question in enumerate(wrong_questions, 1):
-                print(f"{i}. {question}")
+                print_bot(f"{i}. {question}")
 
-    print("\n" + "="*50)
-    print("Thank you for taking the interview!")
-    print("="*50)
+    print_bot("\n" + "="*50)
+    print_bot("Thank you for taking the interview!")
+    print_bot("="*50)
 
     return state
 
@@ -415,4 +477,4 @@ if __name__ == "__main__":
     app = create_interview_graph()
     result = app.invoke(initial_state)
 
-    print("\n🏁 Interview process completed!")
+    print_bot("\n🏁 Interview process completed!")
