@@ -128,14 +128,15 @@ with col2:
             except Exception:
                 pass
 
-    # Always show the Start button, but disable it when interview is running
-    st.button(
-        "🚀 Start Interview",
-        type="primary",
-        use_container_width=True,
-        on_click=_start_interview,
-        disabled=bool(st.session_state.get("interview_started", False)),
-    )
+    # Show the Start button only when the interview has not started.
+    # This makes the button disappear once the interview begins.
+    if not st.session_state.get("interview_started", False):
+        st.button(
+            "🚀 Start Interview",
+            type="primary",
+            use_container_width=True,
+            on_click=_start_interview,
+        )
 
 # Chat interface
 if st.session_state.interview_started:
